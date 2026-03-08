@@ -63,6 +63,10 @@ Open:
 - After Render deploys, open the backend service **Shell** and run:
 	- `npm run db:init`
 
+If you don't have access to a Shell (some free tiers) or your network blocks external Postgres connections, you can set a Render env var and redeploy instead:
+- `AUTO_DB_INIT=true`
+(the backend will apply `backend/db/schema.sql` on startup)
+
 3) Create the admin user
 - In the same Shell:
 	- `npm run create-admin -- admin yourStrongPassword`

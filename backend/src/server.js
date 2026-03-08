@@ -14,6 +14,7 @@ require('dotenv').config();
 */
 
 const express = require('express');
+const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
 const helmet = require('helmet');
@@ -21,6 +22,7 @@ const cors = require('cors');
 const rateLimit = require('express-rate-limit');
 const morgan = require('morgan');
 
+const { pool } = require('./db');
 const { fishPricesRouter } = require('./routes/fishPrices');
 const { adminRouter } = require('./routes/admin');
 const { gasPricesRouter } = require('./routes/gasPrices');
@@ -138,45 +140,67 @@ app.use((err, _req, res, _next) => {
 });
 
 const port = Number(process.env.PORT || 3000);
-app.listen(port, () => {
-  console.log(`IsdaPresyo backend listening on http://localhost:${port}`);
 
-  if (demoMode) {
-    console.warn('DEMO MODE: DATABASE_URL is not set. Using in-memory mock data (non-production only).');
-    console.warn('DEMO MODE: Admin login uses DEMO_ADMIN_USER/DEMO_ADMIN_PASS (defaults: admin/admin123).');
-  } else {
-    if (!process.env.DATABASE_URL) {
-      console.warn('WARN: DATABASE_URL is not set. API endpoints needing DB will fail until configured.');
-    }
-    if (!process.env.JWT_SECRET) {
-      console.warn('WARN: JWT_SECRET is not set. Admin login will fail until configured.');
-    }
+async function ensureDbSchema() {
+  const schemaPath = path.join(__dirname, '..', 'db', 'schema.sql');
+  const sql = fs.readFileSync(schemaPath, 'utf8');
+  await pool.query(sql);
+  console.log('DB schema ensured.');
+}
+
+async function start() {
+  const autoDbInit = String(process.env.AUTO_DB_INIT || 'false').toLowerCase() === 'true';
+  if (autoDbInit && !demoMode) {
+    // Helpful for platforms where a "shell" is unavailable on free tier
+    // or when you can't connect externally to Postgres (port 5432 blocked).
+    await ensureDbSchema();
   }
 
-  // Automated prediction runner.
-  // Note: this is an in-process scheduler. In multi-instance deployments you may
-  // want a single scheduler or a DB-backed lock. For this MVP, upserts + unique
-  // index keep it safe-ish.
-  const enablePredictions = String(process.env.ENABLE_PREDICTIONS || 'true').toLowerCase() === 'true';
-  const intervalDays = Math.max(1, Number(process.env.PREDICTION_INTERVAL_DAYS || 3));
-  const intervalMs = intervalDays * 24 * 60 * 60 * 1000;
+  app.listen(port, () => {
+    console.log(`IsdaPresyo backend listening on http://localhost:${port}`);
 
-  predictionSchedule.configure({ isEnabled: enablePredictions, days: intervalDays });
-
-  if (enablePredictions) {
-    const run = async (reason) => {
-      try {
-        const r = await runPredictionJob();
-        predictionSchedule.markRun(new Date());
-        console.log(`Predictions generated (${reason}):`, r);
-      } catch (e) {
-        console.error('Prediction job failed:', e);
+    if (demoMode) {
+      console.warn('DEMO MODE: DATABASE_URL is not set. Using in-memory mock data (non-production only).');
+      console.warn('DEMO MODE: Admin login uses DEMO_ADMIN_USER/DEMO_ADMIN_PASS (defaults: admin/admin123).');
+    } else {
+      if (!process.env.DATABASE_URL) {
+        console.warn('WARN: DATABASE_URL is not set. API endpoints needing DB will fail until configured.');
       }
-    };
+      if (!process.env.JWT_SECRET) {
+        console.warn('WARN: JWT_SECRET is not set. Admin login will fail until configured.');
+      }
+    }
 
-    // Run once shortly after boot (helps local dev).
-    predictionSchedule.markScheduledFromNow(new Date());
-    setTimeout(() => run('startup'), 2000);
-    setInterval(() => run(`interval_${intervalDays}d`), intervalMs);
-  }
+    // Automated prediction runner.
+    // Note: this is an in-process scheduler. In multi-instance deployments you may
+    // want a single scheduler or a DB-backed lock. For this MVP, upserts + unique
+    // index keep it safe-ish.
+    const enablePredictions = String(process.env.ENABLE_PREDICTIONS || 'true').toLowerCase() === 'true';
+    const intervalDays = Math.max(1, Number(process.env.PREDICTION_INTERVAL_DAYS || 3));
+    const intervalMs = intervalDays * 24 * 60 * 60 * 1000;
+
+    predictionSchedule.configure({ isEnabled: enablePredictions, days: intervalDays });
+
+    if (enablePredictions) {
+      const run = async (reason) => {
+        try {
+          const r = await runPredictionJob();
+          predictionSchedule.markRun(new Date());
+          console.log(`Predictions generated (${reason}):`, r);
+        } catch (e) {
+          console.error('Prediction job failed:', e);
+        }
+      };
+
+      // Run once shortly after boot (helps local dev).
+      predictionSchedule.markScheduledFromNow(new Date());
+      setTimeout(() => run('startup'), 2000);
+      setInterval(() => run(`interval_${intervalDays}d`), intervalMs);
+    }
+  });
+}
+
+start().catch((err) => {
+  console.error('FATAL: startup failed', err);
+  process.exit(1);
 });
