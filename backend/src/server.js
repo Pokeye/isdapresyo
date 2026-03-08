@@ -104,7 +104,27 @@ const loginLimiter = rateLimit({
 app.use('/api/admin/login', loginLimiter);
 
 // Lightweight health endpoint used by the admin UI to detect demo mode.
-app.get('/api/health', (_req, res) => res.json({ ok: true, demoMode }));
+function getDatabaseHostForDiagnostics() {
+  const raw = process.env.DATABASE_URL;
+  if (!raw) return null;
+  try {
+    const u = new URL(raw);
+    return u.hostname || null;
+  } catch {
+    return 'invalid_DATABASE_URL';
+  }
+}
+
+app.get('/api/health', (_req, res) => {
+  res.json({
+    ok: true,
+    demoMode,
+    database: {
+      configured: Boolean(process.env.DATABASE_URL),
+      host: getDatabaseHostForDiagnostics(),
+    },
+  });
+});
 
 app.use('/api', fishPricesRouter);
 app.use('/api', gasPricesRouter);
