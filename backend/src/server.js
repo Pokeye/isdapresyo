@@ -103,6 +103,15 @@ const loginLimiter = rateLimit({
 });
 app.use('/api/admin/login', loginLimiter);
 
+// Render's default health check hits `/`.
+// When hosting the frontend separately (SERVE_FRONTEND=false), return 200 here
+// so the service is considered healthy.
+const serveFrontend = String(process.env.SERVE_FRONTEND || 'true').toLowerCase() === 'true';
+if (!serveFrontend) {
+  app.head('/', (_req, res) => res.sendStatus(200));
+  app.get('/', (_req, res) => res.status(200).send('OK'));
+}
+
 // Lightweight health endpoint used by the admin UI to detect demo mode.
 function getDatabaseHostForDiagnostics() {
   const raw = process.env.DATABASE_URL;
@@ -132,7 +141,6 @@ app.use('/api', predictionsRouter);
 app.use('/api/admin', adminRouter);
 
 // Optional: serve frontend from the same server (useful on Render/Heroku)
-const serveFrontend = String(process.env.SERVE_FRONTEND || 'true').toLowerCase() === 'true';
 if (serveFrontend) {
   const adminPath = process.env.ADMIN_PATH || '/admin';
   const frontendRoot = path.join(__dirname, '..', '..', 'frontend');
