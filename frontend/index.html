@@ -3,22 +3,30 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="theme-color" content="#09637E" />
   <title>IsdaPresyo — Bulan, Sorsogon</title>
   <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet" />
+  <link rel="icon" type="image/png" href="images/favicon.png" />
   <link rel="stylesheet" href="styles.css" />
   <script src="config.js"></script>
 </head>
-<body class="bg-light">
+<body class="bg-info-subtle">
   <div class="container py-4">
-    <div class="d-flex align-items-center justify-content-between mb-3">
-      <h1 class="h4 m-0">IsdaPresyo</h1>
-      <span class="badge text-bg-primary">Bulan, Sorsogon</span>
+    <div class="brand-bar d-flex align-items-center justify-content-between mb-3 p-3 rounded-3">
+      <div class="d-flex align-items-center">
+        <img src="images/logo.png" class="brand-logo me-2" alt="IsdaPresyo logo" onerror="this.remove()" />
+        <h1 class="h4 m-0 brand-title">IsdaPresyo</h1>
+      </div>
+      <span class="badge text-bg-light text-primary">Bulan, Sorsogon</span>
     </div>
 
     <div class="card shadow-sm">
       <div class="card-body">
         <label for="fishSelect" class="form-label">Select fish type</label>
-        <select id="fishSelect" class="form-select form-select-lg" aria-label="Fish type"></select>
+        <div class="d-flex gap-2">
+          <select id="fishSelect" class="form-select form-select-lg" aria-label="Fish type"></select>
+          <button id="favoriteBtn" type="button" class="btn btn-outline-secondary btn-lg" aria-label="Toggle favorite" title="Add to favorites">☆</button>
+        </div>
 
         <div id="status" class="text-muted mt-3 small"></div>
 
@@ -51,7 +59,13 @@
           </div>
 
           <div class="mt-3 small text-muted">
-            Last updated: <span id="lastUpdated">—</span>
+            Predicted for: <span id="lastUpdated">—</span>
+            <div>
+              Next prediction refresh in: <span id="nextRefresh">—</span>
+            </div>
+            <div>
+              Last updated timestamp: <span id="currentTime">—</span>
+            </div>
           </div>
         </div>
       </div>

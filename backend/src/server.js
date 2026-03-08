@@ -23,6 +23,10 @@ const morgan = require('morgan');
 
 const { fishPricesRouter } = require('./routes/fishPrices');
 const { adminRouter } = require('./routes/admin');
+const { gasPricesRouter } = require('./routes/gasPrices');
+const { predictionsRouter } = require('./routes/predictions');
+const { runPredictionJob } = require('./predictionService');
+const predictionSchedule = require('./predictionSchedule');
 
 const app = express();
 
@@ -101,6 +105,8 @@ app.use('/api/admin/login', loginLimiter);
 app.get('/api/health', (_req, res) => res.json({ ok: true, demoMode }));
 
 app.use('/api', fishPricesRouter);
+app.use('/api', gasPricesRouter);
+app.use('/api', predictionsRouter);
 app.use('/api/admin', adminRouter);
 
 // Optional: serve frontend from the same server (useful on Render/Heroku)
@@ -145,5 +151,32 @@ app.listen(port, () => {
     if (!process.env.JWT_SECRET) {
       console.warn('WARN: JWT_SECRET is not set. Admin login will fail until configured.');
     }
+  }
+
+  // Automated prediction runner.
+  // Note: this is an in-process scheduler. In multi-instance deployments you may
+  // want a single scheduler or a DB-backed lock. For this MVP, upserts + unique
+  // index keep it safe-ish.
+  const enablePredictions = String(process.env.ENABLE_PREDICTIONS || 'true').toLowerCase() === 'true';
+  const intervalDays = Math.max(1, Number(process.env.PREDICTION_INTERVAL_DAYS || 3));
+  const intervalMs = intervalDays * 24 * 60 * 60 * 1000;
+
+  predictionSchedule.configure({ isEnabled: enablePredictions, days: intervalDays });
+
+  if (enablePredictions) {
+    const run = async (reason) => {
+      try {
+        const r = await runPredictionJob();
+        predictionSchedule.markRun(new Date());
+        console.log(`Predictions generated (${reason}):`, r);
+      } catch (e) {
+        console.error('Prediction job failed:', e);
+      }
+    };
+
+    // Run once shortly after boot (helps local dev).
+    predictionSchedule.markScheduledFromNow(new Date());
+    setTimeout(() => run('startup'), 2000);
+    setInterval(() => run(`interval_${intervalDays}d`), intervalMs);
   }
 });

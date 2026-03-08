@@ -1,3 +1,55 @@
 body { -webkit-tap-highlight-color: transparent; }
-.stat { background: #ffffff; }
+
+:root {
+	/* User-selected palette */
+	--brand-primary: #09637E;
+	--brand-primary-rgb: 9, 99, 126;
+	--brand-secondary: #088395;
+	--brand-secondary-rgb: 8, 131, 149;
+	--brand-accent: #7AB2B2;
+	--brand-bg: #EBF4F6;
+
+	/* Bootstrap theme overrides */
+	--bs-primary: var(--brand-primary);
+	--bs-primary-rgb: var(--brand-primary-rgb);
+	--bs-secondary: var(--brand-secondary);
+	--bs-secondary-rgb: var(--brand-secondary-rgb);
+
+	/* Main background + text */
+	--bs-body-bg: var(--brand-bg);
+	--bs-body-color: var(--brand-primary);
+
+	/* Muted text derived from primary */
+	--bs-secondary-color: rgba(var(--brand-primary-rgb), 0.82);
+	--bs-tertiary-color: rgba(var(--brand-primary-rgb), 0.66);
+
+	/* Borders and subtle UI surfaces */
+	--bs-border-color: rgba(var(--brand-primary-rgb), 0.22);
+	--bs-border-color-translucent: rgba(var(--brand-primary-rgb), 0.18);
+
+	/* Links */
+	--bs-link-color: var(--brand-secondary);
+	--bs-link-hover-color: rgba(var(--brand-secondary-rgb), 0.85);
+
+	/* Used by .bg-info-subtle in Bootstrap */
+	--bs-info-bg-subtle: var(--brand-bg);
+	--bs-info-border-subtle: rgba(var(--brand-primary-rgb), 0.22);
+}
+.stat { background: var(--bs-white); }
 #status { min-height: 1.25rem; }
+
+.brand-bar {
+	background: var(--bs-primary);
+	color: var(--bs-white);
+}
+
+.brand-logo {
+	width: clamp(52px, 7vw, 80px);
+	height: clamp(52px, 7vw, 80px);
+	object-fit: contain;
+}
+
+.brand-title {
+	line-height: 1.05;
+	font-weight: 600;
+}

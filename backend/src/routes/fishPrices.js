@@ -92,7 +92,7 @@ router.get('/fish-prices', asyncHandler(async (_req, res) => {
 
   const result = await pool.query(
     `SELECT DISTINCT ON (fish_type)
-      id, fish_type, min_price, max_price, avg_price, date_updated
+      id, fish_type, min_price, max_price, avg_price, date_updated::text AS date_updated
      FROM fish_prices
      ORDER BY fish_type, date_updated DESC, id DESC`
   );
@@ -121,7 +121,7 @@ router.get(
     if (cached) return res.json(cached);
 
     const result = await pool.query(
-      `SELECT id, fish_type, min_price, max_price, avg_price, date_updated
+      `SELECT id, fish_type, min_price, max_price, avg_price, date_updated::text AS date_updated
        FROM fish_prices
        WHERE fish_type = $1
        ORDER BY date_updated DESC, id DESC
@@ -160,7 +160,7 @@ router.post(
     const result = await pool.query(
       `INSERT INTO fish_prices (fish_type, min_price, max_price, avg_price, date_updated)
        VALUES ($1, $2, $3, $4, COALESCE($5::date, CURRENT_DATE))
-       RETURNING id, fish_type, min_price, max_price, avg_price, date_updated`,
+       RETURNING id, fish_type, min_price, max_price, avg_price, date_updated::text AS date_updated`,
       [fish_type.trim(), min_price, max_price, avg_price, date_updated || null]
     );
 
@@ -202,7 +202,7 @@ router.put(
            avg_price = $4,
            date_updated = COALESCE($5::date, date_updated)
        WHERE id = $6
-       RETURNING id, fish_type, min_price, max_price, avg_price, date_updated`,
+       RETURNING id, fish_type, min_price, max_price, avg_price, date_updated::text AS date_updated`,
       [fish_type.trim(), min_price, max_price, avg_price, date_updated || null, id]
     );
 

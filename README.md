@@ -100,7 +100,26 @@ That’s it—Netlify will auto-generate `frontend/config.js` during build so th
 - `GET /api/fish-prices` (public)
 - `GET /api/fish-prices/:fish_type` (public)
 - `GET /api/fish-types` (public helper)
+- `GET /api/gas-prices` (public)
+- `GET /api/predictions` (public)
+- `GET /api/predictions/:fish_type` (public)
 - `POST /api/admin/login` (public; rate-limited)
 - `POST /api/fish-prices` (admin)
 - `PUT /api/fish-prices/:id` (admin)
 - `DELETE /api/fish-prices/:id` (admin)
+- `POST /api/gas-prices` (admin; upsert by date)
+- `DELETE /api/gas-prices/:date` (admin)
+- `POST /api/admin/predictions/run` (admin; manually trigger prediction job)
+
+## Predictions (automated)
+The backend can auto-generate predictions from the last 2–3 months of data.
+
+Env vars (optional):
+- `ENABLE_PREDICTIONS=true` (default)
+- `PREDICTION_INTERVAL_DAYS=3` (default)
+- `PREDICTION_TRAINING_DAYS=90` (default)
+- `PREDICTION_HORIZON_DAYS=3` (default)
+
+## Branding (logo)
+- Place your logo image at `frontend/images/logo.png`.
+- It will appear in the top-left header on both the public page and the admin page.
