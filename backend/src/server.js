@@ -17,6 +17,7 @@ const express = require('express');
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
+const bcrypt = require('bcryptjs');
 const helmet = require('helmet');
 const cors = require('cors');
 const rateLimit = require('express-rate-limit');
@@ -177,6 +178,31 @@ async function ensureDbSchema() {
   console.log('DB schema ensured.');
 }
 
+async function ensureBootstrapAdmin() {
+  const username = String(process.env.BOOTSTRAP_ADMIN_USER || '').trim();
+  const password = String(process.env.BOOTSTRAP_ADMIN_PASS || '');
+
+  if (!username || !password) return;
+  if (demoMode) {
+    console.warn('BOOTSTRAP_ADMIN_* provided but demoMode=true; skipping admin bootstrap.');
+    return;
+  }
+
+  console.log(`Bootstrapping admin user "${username}"...`);
+
+  const hash = await bcrypt.hash(password, 12);
+  await pool.query(
+    `INSERT INTO admin (username, password)
+     VALUES ($1, $2)
+     ON CONFLICT (username)
+     DO UPDATE SET password = EXCLUDED.password`,
+    [username, hash]
+  );
+
+  console.log(`Admin user "${username}" created/updated via BOOTSTRAP_ADMIN_*.`);
+  console.warn('IMPORTANT: remove BOOTSTRAP_ADMIN_PASS from env vars after this deploy.');
+}
+
 async function start() {
   const autoDbInit = String(process.env.AUTO_DB_INIT || 'false').toLowerCase() === 'true';
   console.log(`Startup mode: NODE_ENV=${process.env.NODE_ENV || '(unset)'} demoMode=${demoMode}`);
@@ -194,6 +220,12 @@ async function start() {
     console.warn('AUTO_DB_INIT is enabled but demoMode=true; skipping schema init.');
   } else {
     console.log('AUTO_DB_INIT is disabled; skipping schema init.');
+  }
+
+  try {
+    await ensureBootstrapAdmin();
+  } catch (e) {
+    console.error('Bootstrap admin failed (continuing startup):', e);
   }
 
   app.listen(port, () => {
