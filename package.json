@@ -1,0 +1,10 @@
+{
+  "name": "isdapresyo",
+  "private": true,
+  "scripts": {
+    "build": "node deploy/write-frontend-config.js"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}
