@@ -171,6 +171,7 @@ const port = Number(process.env.PORT || 3000);
 
 async function ensureDbSchema() {
   const schemaPath = path.join(__dirname, '..', 'db', 'schema.sql');
+  console.log(`Ensuring DB schema from ${schemaPath}...`);
   const sql = fs.readFileSync(schemaPath, 'utf8');
   await pool.query(sql);
   console.log('DB schema ensured.');
@@ -178,10 +179,17 @@ async function ensureDbSchema() {
 
 async function start() {
   const autoDbInit = String(process.env.AUTO_DB_INIT || 'false').toLowerCase() === 'true';
+  console.log(`Startup mode: NODE_ENV=${process.env.NODE_ENV || '(unset)'} demoMode=${demoMode}`);
+  console.log(`AUTO_DB_INIT=${process.env.AUTO_DB_INIT || '(unset)'} (enabled=${autoDbInit})`);
+
   if (autoDbInit && !demoMode) {
     // Helpful for platforms where a "shell" is unavailable on free tier
     // or when you can't connect externally to Postgres (port 5432 blocked).
     await ensureDbSchema();
+  } else if (autoDbInit && demoMode) {
+    console.warn('AUTO_DB_INIT is enabled but demoMode=true; skipping schema init.');
+  } else {
+    console.log('AUTO_DB_INIT is disabled; skipping schema init.');
   }
 
   app.listen(port, () => {
