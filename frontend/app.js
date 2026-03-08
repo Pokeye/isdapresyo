@@ -1,5 +1,9 @@
 const API_BASE = window.API_BASE || '';
 
+const ALLOW_MOCK_FALLBACK =
+  location.hostname === 'localhost' ||
+  location.hostname === '127.0.0.1';
+
 // Public page script.
 // Flow:
 // 1) Load fish types from the backend.
@@ -185,15 +189,20 @@ async function loadFishTypes() {
       const rows = await apiGet('/api/fish-prices');
       fishTypes = Array.from(new Set(rows.map((r) => r.fish_type))).sort();
     } catch {
-      // final fallback: mock data
-      usingMock = true;
-      fishTypes = Array.from(MOCK_BY_TYPE.keys()).sort();
+      // final fallback: mock data (dev only)
+      if (ALLOW_MOCK_FALLBACK) {
+        usingMock = true;
+        fishTypes = Array.from(MOCK_BY_TYPE.keys()).sort();
+      } else {
+        fishTypes = [];
+        setStatus('Backend unavailable.');
+      }
     }
   }
 
   if (!fishTypes.length) {
     fishSelect.innerHTML = '<option value="">No data yet</option>';
-    setStatus('No fish prices found.');
+    if (!statusEl.textContent) setStatus('No fish prices found.');
     setFavoriteButtonState(null);
     return;
   }
@@ -211,7 +220,7 @@ async function loadFishTypes() {
     })
     .join('');
 
-  setStatus(usingMock ? 'Showing sample data (backend not connected yet).' : '');
+  setStatus(usingMock ? 'Showing sample data (backend not connected yet).' : statusEl.textContent);
   // Load the first fish type immediately.
   const initialType = decodeURIComponent(fishSelect.value);
   setFavoriteButtonState(initialType);
@@ -235,10 +244,15 @@ async function loadFishPrice(fishType) {
     try {
       row = await apiGet(`/api/fish-prices/${encodeURIComponent(fishType)}`);
     } catch {
-      usingMock = true;
-      row = MOCK_BY_TYPE.get(fishType);
-      if (!row) {
-        setStatus('No sample data for this fish type.');
+      if (ALLOW_MOCK_FALLBACK) {
+        usingMock = true;
+        row = MOCK_BY_TYPE.get(fishType);
+        if (!row) {
+          setStatus('No sample data for this fish type.');
+          return;
+        }
+      } else {
+        setStatus('Backend unavailable.');
         return;
       }
     }
@@ -282,6 +296,10 @@ if (favoriteBtn) {
 
 // Initial page load.
 loadFishTypes().catch(() => {
-  usingMock = true;
-  setStatus('Showing sample data (backend not connected yet).');
+  if (ALLOW_MOCK_FALLBACK) {
+    usingMock = true;
+    setStatus('Showing sample data (backend not connected yet).');
+  } else {
+    setStatus('Backend unavailable.');
+  }
 });
