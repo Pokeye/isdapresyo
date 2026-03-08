@@ -11,5 +11,11 @@ backend/logs/*.log
 .DS_Store
 Thumbs.db
 
+# Local tooling
+.vscode/
+
+# Raw/source assets (deployed assets live in frontend/images/)
+Image/
+
 # Artifacts
 *.zip
