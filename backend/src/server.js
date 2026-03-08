@@ -185,7 +185,11 @@ async function start() {
   if (autoDbInit && !demoMode) {
     // Helpful for platforms where a "shell" is unavailable on free tier
     // or when you can't connect externally to Postgres (port 5432 blocked).
-    await ensureDbSchema();
+    try {
+      await ensureDbSchema();
+    } catch (e) {
+      console.error('AUTO_DB_INIT failed; continuing startup without schema:', e);
+    }
   } else if (autoDbInit && demoMode) {
     console.warn('AUTO_DB_INIT is enabled but demoMode=true; skipping schema init.');
   } else {
