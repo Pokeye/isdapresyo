@@ -1,5 +1,5 @@
 const express = require('express');
-const { body, param } = require('express-validator');
+const { body, param, query } = require('express-validator');
 const { pool } = require('../db');
 const { requireAdmin } = require('../middleware/auth');
 const { handleValidation } = require('../middleware/validation');
@@ -26,6 +26,7 @@ const mockStore = require('../mockStore');
 
 const router = express.Router();
 const CACHE_TTL_MS = 60 * 1000;
+const HISTORY_CACHE_TTL_MS = 5 * 60 * 1000;
 
 // Wrap async route handlers so thrown errors go to Express' error middleware.
 const asyncHandler = (fn) => (req, res, next) => Promise.resolve(fn(req, res, next)).catch(next);
@@ -100,6 +101,50 @@ router.get('/fish-prices', asyncHandler(async (_req, res) => {
   setCached(cacheKey, result.rows, CACHE_TTL_MS);
   return res.json(result.rows);
 }));
+
+// Public: history for charting/trends.
+// Returns ascending by date.
+router.get(
+  '/fish-prices/history/:fish_type',
+  [
+    param('fish_type').isString().trim().isLength({ min: 1, max: 100 }),
+    query('days').optional().isInt({ min: 7, max: 200 }).toInt(),
+  ],
+  handleValidation,
+  asyncHandler(async (req, res) => {
+    const fishType = normalizeFishType(req.params.fish_type);
+    const daysBack = Number.isFinite(req.query.days) ? Number(req.query.days) : 150;
+
+    if (isDemoMode()) {
+      return res.json(mockStore.listHistoryByFishType(fishType, daysBack));
+    }
+
+    const cacheKey = `fish-prices:history:${fishType.toLowerCase()}:${daysBack}`;
+    const cached = getCached(cacheKey);
+    if (cached) return res.json(cached);
+
+    const result = await pool.query(
+      `WITH latest AS (
+         SELECT MAX(date_updated) AS max_date
+         FROM fish_prices
+         WHERE fish_type = $1
+       )
+       SELECT id, fish_type, min_price, max_price, avg_price, date_updated::text AS date_updated
+       FROM fish_prices
+       WHERE fish_type = $1
+         AND (
+           (SELECT max_date FROM latest) IS NULL
+           OR date_updated >= ((SELECT max_date FROM latest) - ($2::int * INTERVAL '1 day'))
+         )
+       ORDER BY date_updated ASC, id ASC
+       LIMIT 600`,
+      [fishType, daysBack]
+    );
+
+    setCached(cacheKey, result.rows, HISTORY_CACHE_TTL_MS);
+    return res.json(result.rows);
+  })
+);
 
 router.get(
   '/fish-prices/:fish_type',

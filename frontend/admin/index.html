@@ -6,18 +6,18 @@
   <meta name="theme-color" content="#09637E" />
   <title>IsdaPresyo Admin</title>
   <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet" />
-  <link rel="icon" type="image/png" href="../images/favicon.png" />
-  <link rel="stylesheet" href="../styles.css" />
-  <script src="../config.js"></script>
+  <link rel="icon" type="image/png" href="/images/favicon.png" />
+  <link rel="stylesheet" href="/styles.css" />
+  <script src="/config.js"></script>
 </head>
 <body class="bg-info-subtle">
   <div class="container py-4">
     <div class="brand-bar d-flex align-items-center justify-content-between mb-3 p-3 rounded-3">
       <div class="d-flex align-items-center">
-        <img src="../images/logo.png" class="brand-logo me-2" alt="IsdaPresyo logo" onerror="this.remove()" />
+        <img src="/images/logo.png" class="brand-logo me-2" alt="IsdaPresyo logo" onerror="this.remove()" />
         <h1 class="h4 m-0 brand-title">IsdaPresyo Admin</h1>
       </div>
-      <button id="logoutBtn" class="btn btn-light btn-sm d-none">Logout</button>
+      <button id="logoutBtn" class="btn btn-light btn-sm d-none" title="Logs out of the Admin panel on this device.">Logout</button>
     </div>
 
     <div id="loginCard" class="card shadow-sm">
@@ -36,10 +36,22 @@
             </div>
           </div>
           <div class="col-12 d-grid">
-            <button id="loginBtn" class="btn btn-primary btn-lg">Login</button>
+            <button id="loginBtn" class="btn btn-primary btn-lg" title="Logs in and opens the Admin panel.">Login</button>
           </div>
         </div>
         <div id="loginStatus" class="small text-muted mt-2"></div>
+
+        <div id="tabNotice" class="mt-2 d-none">
+          <div class="alert alert-warning py-2 mb-2">
+            Admin is already open in another tab.
+          </div>
+          <div class="d-flex gap-2">
+            <button id="goToActiveBtn" class="btn btn-outline-primary btn-sm" type="button" title="Asks the original admin tab to focus itself (best-effort).">Go to active tab</button>
+          </div>
+          <div class="small text-muted mt-2">
+            If nothing happens, your browser may block focusing tabs—close this tab and use the original one.
+          </div>
+        </div>
       </div>
     </div>
 
@@ -48,13 +60,10 @@
         <div class="card-body">
           <h2 class="h6">Add / Update Fish Price</h2>
           <div class="row g-2">
-            <div class="col-12 col-md-2">
-              <label class="form-label" for="id">ID (for update)</label>
-              <input id="id" class="form-control" placeholder="(auto)" />
-            </div>
             <div class="col-12 col-md-4">
               <label class="form-label" for="fish_type">Fish type</label>
-              <input id="fish_type" class="form-control" placeholder="e.g., Galunggong" />
+              <input id="fish_type" class="form-control" list="fishTypeList" placeholder="Select or type…" />
+              <datalist id="fishTypeList"></datalist>
             </div>
             <div class="col-4 col-md-2">
               <label class="form-label" for="min_price">Min</label>
@@ -66,19 +75,118 @@
             </div>
             <div class="col-4 col-md-2">
               <label class="form-label" for="avg_price">Avg</label>
-              <input id="avg_price" class="form-control" inputmode="decimal" />
+              <input id="avg_price" class="form-control" inputmode="decimal" readonly />
             </div>
             <div class="col-12 col-md-3">
               <label class="form-label" for="date_updated">Date updated</label>
               <input id="date_updated" type="date" class="form-control" />
             </div>
             <div class="col-12 col-md-9 d-grid d-md-flex gap-2 align-items-end">
-              <button id="createBtn" class="btn btn-success btn-lg">Add New</button>
-              <button id="updateBtn" class="btn btn-warning btn-lg">Update by ID</button>
-              <button id="clearBtn" class="btn btn-outline-secondary btn-lg">Clear</button>
+              <button id="loadLatestBtn" class="btn btn-outline-primary btn-lg" title="Loads the most recent saved record for the fish type you typed.">Load latest</button>
+              <button id="createBtn" class="btn btn-success btn-lg" title="Creates a new record using the form values (Avg is auto-computed from Min/Max).">Add New</button>
+              <button id="updateBtn" class="btn btn-warning btn-lg" disabled title="Updates the record currently loaded into the form (from a row click or Load latest).">Update loaded</button>
+              <button id="deleteBtn" class="btn btn-outline-danger btn-lg" disabled title="Deletes the record currently loaded into the form (from a row click or Load latest).">Delete loaded</button>
+              <button id="clearBtn" class="btn btn-outline-secondary btn-lg" title="Clears the form and resets Date updated to today.">Clear</button>
             </div>
           </div>
           <div id="adminStatus" class="small text-muted mt-2"></div>
+          <div class="small text-muted mt-1">
+            <div class="fw-semibold">What these buttons do</div>
+            <div><strong>Load latest</strong>: fetches the latest record for the fish type you entered.</div>
+            <div><strong>Add New</strong>: saves a brand-new record for the selected date.</div>
+            <div><strong>Update loaded</strong>: edits the single record you loaded into the form.</div>
+            <div><strong>Delete loaded</strong>: deletes the single record you loaded into the form.</div>
+          </div>
+          <div id="completeness" class="small mt-2"></div>
+        </div>
+      </div>
+
+      <div class="card shadow-sm mt-3">
+        <div class="card-body">
+          <div class="d-flex justify-content-between align-items-center">
+            <h2 class="h6 m-0">Preview chart</h2>
+            <div class="d-flex gap-2">
+              <button id="previewChartBtn" class="btn btn-outline-primary btn-sm" title="Draws a chart for the fish type in the form (history + forecast + gas).">Preview chart</button>
+              <button id="clearChartBtn" class="btn btn-outline-secondary btn-sm" title="Clears the preview chart.">Clear</button>
+            </div>
+          </div>
+          <div class="d-flex flex-wrap gap-2 mt-2">
+            <button id="dlHistoryCsvBtn" class="btn btn-outline-success btn-sm" type="button" title="Downloads the fish history series used for charts (CSV).">Download fish history CSV</button>
+            <button id="dlGasCsvBtn" class="btn btn-outline-success btn-sm" type="button" title="Downloads the gas series over the same date window (CSV).">Download gas CSV</button>
+            <button id="dlPredCsvBtn" class="btn btn-outline-success btn-sm" type="button" title="Downloads all stored prediction rows for this fish type (CSV).">Download predictions CSV</button>
+          </div>
+          <div id="adminChartWrap" class="chart-wrap mt-2 d-none">
+            <canvas id="adminTrendChart"></canvas>
+          </div>
+          <div id="adminChartNote" class="small text-muted mt-2"></div>
+          <div class="small text-muted mt-1">
+            <div class="fw-semibold">What these do</div>
+            <div><strong>Preview chart</strong>: uses the current fish type to show history + forecast.</div>
+            <div><strong>Downloads</strong>: export the same data you see/use in charts.</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="card shadow-sm mt-3">
+        <div class="card-body">
+          <div class="d-flex justify-content-between align-items-center">
+            <h2 class="h6 m-0">Gas Price (daily reference)</h2>
+            <button id="refreshGasBtn" class="btn btn-outline-primary btn-sm" title="Reloads the Gas table from the server.">Refresh</button>
+          </div>
+          <div class="row g-2 mt-1">
+            <div class="col-12 col-md-4">
+              <label class="form-label" for="gas_date">Date</label>
+              <input id="gas_date" type="date" class="form-control" />
+            </div>
+            <div class="col-12 col-md-4">
+              <label class="form-label" for="gas_price">Price (₱)</label>
+              <input id="gas_price" class="form-control" inputmode="decimal" />
+            </div>
+            <div class="col-12 col-md-4 d-grid d-md-flex gap-2 align-items-end">
+                <button id="upsertGasBtn" class="btn btn-success btn-lg" title="Saves the gas price for this date (creates or updates the same date).">Save gas</button>
+                <button id="deleteGasBtn" class="btn btn-outline-danger btn-lg" title="Deletes the gas price entry for this date.">Delete date</button>
+                <button id="clearGasBtn" class="btn btn-outline-secondary btn-lg" title="Clears gas inputs and resets the date to today.">Clear</button>
+            </div>
+          </div>
+          <div id="gasStatus" class="small text-muted mt-2"></div>
+          <div class="table-responsive mt-2">
+            <table class="table table-sm align-middle">
+              <thead>
+                <tr>
+                  <th>Date</th>
+                  <th>Price</th>
+                </tr>
+              </thead>
+              <tbody id="gasRows"></tbody>
+            </table>
+          </div>
+          <div class="small text-muted">Tip: tap a row to load it into the gas form.</div>
+          <div class="small text-muted mt-1">
+            <div class="fw-semibold">What these buttons do</div>
+            <div><strong>Save gas</strong>: create/update a gas price for the selected date.</div>
+            <div><strong>Delete date</strong>: remove the gas price for the selected date.</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="card shadow-sm mt-3">
+        <div class="card-body">
+          <div class="d-flex justify-content-between align-items-center">
+            <h2 class="h6 m-0">Predictions</h2>
+            <div class="d-flex gap-2">
+              <button id="runPredictionsBtn" class="btn btn-primary btn-sm" title="Recomputes forecasts from the latest fish + gas data and stores results.">Run predictions now</button>
+              <button id="dlRunSummaryBtn" class="btn btn-outline-secondary btn-sm" type="button" title="Downloads the summary of the most recent run (after you click Run predictions now).">Download run summary (JSON)</button>
+            </div>
+          </div>
+          <div class="small text-muted mt-2">
+            <div class="fw-semibold">What this does</div>
+            <div>
+              Recomputes and saves forecasted fish prices using the latest stored fish price history (+ gas reference when available).
+              This does <strong>not</strong> edit your raw fish/gas records — it only updates the generated predictions.
+              Useful for black-box testing: different groups can change inputs (fish/gas), run again, and compare outputs.
+            </div>
+          </div>
+          <div id="predStatus" class="small text-muted mt-2"></div>
         </div>
       </div>
 
@@ -86,7 +194,7 @@
         <div class="card-body">
           <div class="d-flex justify-content-between align-items-center">
             <h2 class="h6 m-0">Fish Prices</h2>
-            <button id="refreshBtn" class="btn btn-outline-primary btn-sm">Refresh</button>
+            <button id="refreshBtn" class="btn btn-outline-primary btn-sm" title="Reloads the Fish Prices table from the server.">Refresh</button>
           </div>
 
           <div class="table-responsive mt-2">
@@ -106,11 +214,17 @@
             </table>
           </div>
           <div class="small text-muted">Tip: tap a row to load it into the form.</div>
+          <div class="small text-muted mt-1">
+            <div class="fw-semibold">How to edit</div>
+            <div><strong>Tap a row</strong>: loads that record into the form (enables Update/Delete loaded).</div>
+            <div><strong>Red trash button</strong>: deletes that row directly (asks for confirmation).</div>
+          </div>
         </div>
       </div>
     </div>
   </div>
 
-  <script src="admin.js"></script>
+  <script src="/vendor/chart.umd.min.js"></script>
+  <script src="/admin/admin.js"></script>
 </body>
 </html>

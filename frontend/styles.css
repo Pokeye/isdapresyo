@@ -53,3 +53,25 @@ body { -webkit-tap-highlight-color: transparent; }
 	line-height: 1.05;
 	font-weight: 600;
 }
+
+.fish-photo {
+	width: 100%;
+	max-height: 260px;
+	object-fit: cover;
+}
+
+.chart-wrap {
+	height: 260px;
+}
+
+#trendChart {
+	width: 100% !important;
+	height: 100% !important;
+	display: block;
+}
+
+#adminTrendChart {
+	width: 100% !important;
+	height: 100% !important;
+	display: block;
+}

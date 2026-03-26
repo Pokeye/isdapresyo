@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <meta name="theme-color" content="#09637E" />
   <title>IsdaPresyo — Bulan, Sorsogon</title>
+  <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin />
   <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet" />
   <link rel="icon" type="image/png" href="images/favicon.png" />
   <link rel="stylesheet" href="styles.css" />
@@ -60,12 +61,26 @@
 
           <div class="mt-3 small text-muted">
             Predicted for: <span id="lastUpdated">—</span>
+            <span id="updatedBadge" class="badge text-bg-success ms-2 d-none">Updated</span>
             <div>
               Next prediction refresh in: <span id="nextRefresh">—</span>
             </div>
             <div>
               Last updated timestamp: <span id="currentTime">—</span>
             </div>
+          </div>
+
+          <div id="fishImageWrap" class="mt-3 text-center d-none">
+            <img id="fishImage" class="img-fluid rounded-3 border fish-photo" alt="" loading="lazy" />
+            <div id="fishImageCaption" class="small text-muted mt-2"></div>
+          </div>
+
+          <div id="trendWrap" class="mt-3 d-none">
+            <div class="small text-muted mb-2">Trend (last ~5 months) + forecast</div>
+            <div class="chart-wrap border rounded-3 bg-white p-2">
+              <canvas id="trendChart" height="180"></canvas>
+            </div>
+            <div id="trendNote" class="small text-muted mt-2"></div>
           </div>
         </div>
       </div>
@@ -76,6 +91,7 @@
     </div>
   </div>
 
+  <script src="vendor/chart.umd.min.js"></script>
   <script src="app.js"></script>
 </body>
 </html>

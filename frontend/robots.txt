@@ -1,0 +1,4 @@
+User-agent: *
+Disallow: /admin
+
+# Note: robots.txt is advisory; real bot blocking needs host/WAF settings.

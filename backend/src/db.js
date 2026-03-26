@@ -11,6 +11,34 @@ const { Pool } = require('pg');
 
 let poolInstance = null;
 
+function parseBoolish(raw) {
+  const v = String(raw || '').trim().toLowerCase();
+  if (!v) return null;
+  if (['1', 'true', 'yes', 'y', 'on', 'require', 'required'].includes(v)) return true;
+  if (['0', 'false', 'no', 'n', 'off', 'disable', 'disabled'].includes(v)) return false;
+  return null;
+}
+
+function shouldUseSsl(connectionString) {
+  // Explicit override.
+  const forced = parseBoolish(process.env.PGSSL ?? process.env.DATABASE_SSL);
+  if (forced !== null) return forced;
+
+  // Default: production deployments tend to require SSL.
+  if (process.env.NODE_ENV === 'production') return true;
+
+  // Heuristic: Supabase-managed Postgres generally requires SSL even outside production.
+  try {
+    const u = new URL(connectionString);
+    const host = String(u.hostname || '').toLowerCase();
+    if (host.includes('supabase') || host.endsWith('.supabase.co')) return true;
+  } catch {
+    // ignore URL parse errors
+  }
+
+  return false;
+}
+
 function ensurePool() {
   if (poolInstance) return poolInstance;
 
@@ -23,8 +51,9 @@ function ensurePool() {
 
   poolInstance = new Pool({
     connectionString,
-    // Render and similar platforms often require SSL for managed Postgres.
-    ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false,
+    // Managed Postgres providers (Supabase/Render/etc.) often require SSL.
+    // Use PGSSL=true (or DATABASE_SSL=true) to force SSL in development.
+    ssl: shouldUseSsl(connectionString) ? { rejectUnauthorized: false } : false,
   });
 
   return poolInstance;

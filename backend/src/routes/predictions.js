@@ -6,8 +6,11 @@ const { handleValidation } = require('../middleware/validation');
 const { runPredictionJob, isDemoMode } = require('../predictionService');
 const mockStore = require('../mockStore');
 const predictionSchedule = require('../predictionSchedule');
+const { getCached, setCached } = require('../cache');
 
 const router = express.Router();
+
+const CACHE_TTL_MS = 60 * 1000;
 
 const asyncHandler = (fn) => (req, res, next) => Promise.resolve(fn(req, res, next)).catch(next);
 
@@ -27,6 +30,10 @@ router.get(
     if (isDemoMode()) {
       return res.json(mockStore.listPredictions({ fishType, from, to }));
     }
+
+    const cacheKey = `predictions:list:${fishType || ''}:${from || ''}:${to || ''}`;
+    const cached = getCached(cacheKey);
+    if (cached) return res.json(cached);
 
     const clauses = [];
     const args = [];
@@ -55,6 +62,7 @@ router.get(
       args
     );
 
+    setCached(cacheKey, result.rows, CACHE_TTL_MS);
     return res.json(result.rows);
   })
 );
@@ -104,6 +112,10 @@ router.get(
       return res.json(rows);
     }
 
+    const cacheKey = 'predictions:predicted-fish-prices';
+    const cached = getCached(cacheKey);
+    if (cached) return res.json(cached);
+
     const result = await pool.query(
       `WITH next_date AS (
          SELECT MIN(prediction_date) AS d
@@ -125,6 +137,7 @@ router.get(
                 p.id DESC`
     );
 
+    setCached(cacheKey, result.rows, CACHE_TTL_MS);
     return res.json(result.rows);
   })
 );
@@ -155,6 +168,10 @@ router.get(
       });
     }
 
+    const cacheKey = `predictions:predicted-fish-prices:type:${fishType.toLowerCase()}`;
+    const cached = getCached(cacheKey);
+    if (cached) return res.json(cached);
+
     const result = await pool.query(
       `SELECT id,
               fish_type,
@@ -175,6 +192,7 @@ router.get(
 
     const row = result.rows[0];
     if (!row) return res.status(404).json({ message: 'Not found' });
+    setCached(cacheKey, row, CACHE_TTL_MS);
     return res.json(row);
   })
 );
@@ -190,6 +208,10 @@ router.get(
       return res.json(mockStore.listPredictions({ fishType }));
     }
 
+    const cacheKey = `predictions:fish_type:${fishType.toLowerCase()}`;
+    const cached = getCached(cacheKey);
+    if (cached) return res.json(cached);
+
     const result = await pool.query(
       `SELECT id, fish_type, predicted_min_price, predicted_max_price, predicted_avg_price,
               prediction_date::text AS prediction_date, algorithm_used, created_at
@@ -200,6 +222,7 @@ router.get(
       [fishType]
     );
 
+    setCached(cacheKey, result.rows, CACHE_TTL_MS);
     return res.json(result.rows);
   })
 );

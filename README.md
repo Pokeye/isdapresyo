@@ -51,6 +51,18 @@ Open:
 
 ## Deploy notes
 
+### Netlify (frontend) + Supabase (Postgres) + VM (backend)
+
+If you’re moving off Render/Vercel free tiers, the simplest reliable setup is:
+- Frontend: Netlify (static)
+- Database: Supabase Postgres
+- Backend: a small always-on VM (the backend runs an Express server and an in-process prediction scheduler)
+
+Guide + templates:
+- [docs/deploy-netlify-supabase-vm.md](docs/deploy-netlify-supabase-vm.md)
+- Systemd unit template: [deploy/vm/isdapresyo-backend.service](deploy/vm/isdapresyo-backend.service)
+- Nginx reverse proxy template: [deploy/vm/nginx-isdapresyo-backend.conf](deploy/vm/nginx-isdapresyo-backend.conf)
+
 ### Option A (recommended): Click-and-go Render (backend + Postgres) + Netlify (frontend)
 
 1) Deploy backend on Render (Blueprint)

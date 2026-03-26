@@ -10,6 +10,12 @@ function isoDate(d) {
   return new Date(d).toISOString().slice(0, 10);
 }
 
+function addDays(date, days) {
+  const d = new Date(date.getTime());
+  d.setDate(d.getDate() + days);
+  return d;
+}
+
 function coerceDays(n, fallback) {
   const v = Number(n);
   if (!Number.isFinite(v) || v <= 0) return fallback;
@@ -107,9 +113,15 @@ async function runPredictionJob(options = {}) {
   const daysBack = coerceDays(options.daysBack, coerceDays(process.env.PREDICTION_TRAINING_DAYS, 90));
   const horizonDays = coerceDays(options.horizonDays, coerceDays(process.env.PREDICTION_HORIZON_DAYS, 3));
 
+  const trainingTo = isoDate(new Date());
+  const trainingFrom = isoDate(addDays(new Date(), -daysBack));
+
   if (isDemoMode()) {
     const fishTypes = mockStore.listFishTypes();
     const gasByDate = mockStore.listGasByDate(daysBack);
+
+    const methodsByFish = Object.create(null);
+    let fishUpdated = 0;
 
     for (const fishType of fishTypes) {
       const rows = mockStore.listHistoryByFishType(fishType, daysBack);
@@ -117,13 +129,30 @@ async function runPredictionJob(options = {}) {
       const gasFilled = forwardFillGas(rows, gasByDate);
       const preds = predictNext({ priceRows: rows, gasByDate: gasFilled, horizonDays });
       mockStore.upsertPredictions(fishType, preds);
+
+      if (preds && preds.length) {
+        fishUpdated++;
+        methodsByFish[fishType] = String(preds[0].algorithm_used || 'unknown');
+      }
     }
 
-    return { ok: true, demoMode: true, daysBack, horizonDays };
+    return {
+      ok: true,
+      demoMode: true,
+      daysBack,
+      horizonDays,
+      trainingFrom,
+      trainingTo,
+      fishUpdated,
+      methodsByFish,
+    };
   }
 
   const fishTypes = await loadFishTypesDb();
   const gasByDateRaw = await loadGasByDateDb(daysBack);
+
+  const methodsByFish = Object.create(null);
+  let fishUpdated = 0;
 
   for (const fishType of fishTypes) {
     const rows = await loadTrainingRowsDb(fishType, daysBack);
@@ -132,9 +161,23 @@ async function runPredictionJob(options = {}) {
     const gasFilled = forwardFillGas(rows, gasByDateRaw);
     const preds = predictNext({ priceRows: rows, gasByDate: gasFilled, horizonDays });
     await upsertPredictionsDb(fishType, preds);
+
+    if (preds && preds.length) {
+      fishUpdated++;
+      methodsByFish[fishType] = String(preds[0].algorithm_used || 'unknown');
+    }
   }
 
-  return { ok: true, demoMode: false, daysBack, horizonDays };
+  return {
+    ok: true,
+    demoMode: false,
+    daysBack,
+    horizonDays,
+    trainingFrom,
+    trainingTo,
+    fishUpdated,
+    methodsByFish,
+  };
 }
 
 module.exports = {

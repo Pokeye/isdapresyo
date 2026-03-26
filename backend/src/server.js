@@ -35,6 +35,7 @@ const app = express();
 
 const isProd = process.env.NODE_ENV === 'production';
 const demoMode = !isProd && !process.env.DATABASE_URL;
+const exposeDiagnostics = String(process.env.EXPOSE_DIAGNOSTICS || 'false').toLowerCase() === 'true';
 
 // In demo mode (no DB yet), allow JWT to work without manual env setup.
 if (demoMode && !process.env.JWT_SECRET) {
@@ -73,13 +74,46 @@ if (String(process.env.ENFORCE_HTTPS).toLowerCase() === 'true') {
 app.use(helmet());
 app.use(morgan('combined'));
 
+// Basic caching for public GET endpoints.
+// Helps browsers/CDNs avoid refetching the same data repeatedly (especially during bot/traffic spikes).
+app.use((req, res, next) => {
+  if (req.method === 'GET' && req.path.startsWith('/api/') && !req.path.startsWith('/api/admin')) {
+    res.setHeader('Cache-Control', 'public, max-age=60');
+  }
+  return next();
+});
+
 // CORS: for local dev, allowing all origins is convenient.
 // For production, set FRONTEND_ORIGIN to your Netlify (or other) domain.
 
-const frontendOrigin = process.env.FRONTEND_ORIGIN;
+function parseAllowedOrigins(raw) {
+  if (!raw) return [];
+  return String(raw)
+    .split(',')
+    .map((s) => s.trim())
+    .filter(Boolean);
+}
+
+const allowedOrigins = parseAllowedOrigins(process.env.FRONTEND_ORIGIN);
+
+if (isProd && !allowedOrigins.length) {
+  console.warn('WARN: FRONTEND_ORIGIN is not set; CORS will be disabled for cross-origin requests.');
+  console.warn('      If your frontend is hosted separately (Netlify/Vercel), set FRONTEND_ORIGIN to that exact origin.');
+}
+
 app.use(
   cors({
-    origin: frontendOrigin ? [frontendOrigin] : true,
+    // In production we default to no cross-origin access unless explicitly allowed.
+    // Same-origin requests (backend serving the frontend) do not require CORS.
+    origin:
+      allowedOrigins.length > 0
+        ? (origin, cb) => {
+            if (!origin) return cb(null, true);
+            return cb(null, allowedOrigins.includes(origin));
+          }
+        : isProd
+          ? false
+          : true,
     credentials: false,
   })
 );
@@ -131,7 +165,7 @@ app.get('/api/health', (_req, res) => {
     demoMode,
     database: {
       configured: Boolean(process.env.DATABASE_URL),
-      host: getDatabaseHostForDiagnostics(),
+      host: isProd && !exposeDiagnostics ? null : getDatabaseHostForDiagnostics(),
     },
   });
 });
@@ -443,7 +477,7 @@ async function start() {
     console.error('Synthetic seed failed (continuing startup):', e);
   }
 
-  app.listen(port, () => {
+  const server = app.listen(port, () => {
     console.log(`IsdaPresyo backend listening on http://localhost:${port}`);
 
     if (demoMode) {
@@ -479,11 +513,46 @@ async function start() {
         }
       };
 
-      // Run once shortly after boot (helps local dev).
+      // Run once shortly after boot.
+      // Optimization: avoid hammering the DB right after every restart when predictions already exist.
       predictionSchedule.markScheduledFromNow(new Date());
-      setTimeout(() => run('startup'), 2000);
+      setTimeout(async () => {
+        if (demoMode) {
+          return run('startup_demo');
+        }
+
+        try {
+          const existing = await pool.query(
+            'SELECT 1 FROM predictions WHERE prediction_date >= CURRENT_DATE LIMIT 1'
+          );
+          if (existing.rows && existing.rows.length) {
+            console.log('Startup prediction run skipped: future predictions already exist.');
+            return;
+          }
+        } catch (e) {
+          // If the check fails (e.g., schema missing), fall back to attempting a run.
+          console.warn('Startup prediction existence check failed; attempting run anyway.');
+        }
+
+        return run('startup');
+      }, 2000);
       setInterval(() => run(`interval_${intervalDays}d`), intervalMs);
     }
+  });
+
+  server.on('error', (err) => {
+    if (err && err.code === 'EADDRINUSE') {
+      console.error(`FATAL: Port ${port} is already in use.`);
+      console.error('Stop the other process using this port, or start with a different PORT.');
+      console.error('Examples:');
+      console.error('  PowerShell: $env:PORT=3001; npm start');
+      console.error('  cmd.exe:    set PORT=3001 && npm start');
+      process.exit(1);
+      return;
+    }
+
+    console.error('FATAL: server listen error', err);
+    process.exit(1);
   });
 }
 
