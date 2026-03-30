@@ -97,23 +97,21 @@ function parseAllowedOrigins(raw) {
 const allowedOrigins = parseAllowedOrigins(process.env.FRONTEND_ORIGIN);
 
 if (isProd && !allowedOrigins.length) {
-  console.warn('WARN: FRONTEND_ORIGIN is not set; CORS will be disabled for cross-origin requests.');
-  console.warn('      If your frontend is hosted separately (Netlify/Vercel), set FRONTEND_ORIGIN to that exact origin.');
+  console.warn('WARN: FRONTEND_ORIGIN is not set; allowing all cross-origin requests (no credentials).');
+  console.warn('      Recommended: set FRONTEND_ORIGIN to your exact frontend origin to restrict access.');
 }
 
 app.use(
   cors({
-    // In production we default to no cross-origin access unless explicitly allowed.
     // Same-origin requests (backend serving the frontend) do not require CORS.
-    origin:
-      allowedOrigins.length > 0
-        ? (origin, cb) => {
-            if (!origin) return cb(null, true);
-            return cb(null, allowedOrigins.includes(origin));
-          }
-        : isProd
-          ? false
-          : true,
+    // For separately hosted frontends (Vercel/Netlify), allow-listing is recommended.
+    origin: (origin, cb) => {
+      if (!origin) return cb(null, true);
+      if (allowedOrigins.length > 0) return cb(null, allowedOrigins.includes(origin));
+      // If FRONTEND_ORIGIN is not configured, default to allowing cross-origin requests.
+      // This avoids broken deployments where the frontend cannot reach the API.
+      return cb(null, true);
+    },
     credentials: false,
   })
 );
