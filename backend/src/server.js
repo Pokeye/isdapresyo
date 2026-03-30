@@ -30,6 +30,7 @@ const { gasPricesRouter } = require('./routes/gasPrices');
 const { predictionsRouter } = require('./routes/predictions');
 const { runPredictionJob } = require('./predictionService');
 const predictionSchedule = require('./predictionSchedule');
+const { getUploadsRoot } = require('./uploads');
 
 const app = express();
 
@@ -125,7 +126,7 @@ app.use(express.json({ limit: '64kb' }));
 // Publicly serve uploaded assets (fish photos, etc.).
 // NOTE: This stores files on the server filesystem. In serverless/ephemeral hosting,
 // use object storage instead.
-const uploadsRoot = path.join(__dirname, '..', 'uploads');
+const uploadsRoot = getUploadsRoot({ isProd });
 try {
   fs.mkdirSync(uploadsRoot, { recursive: true });
 } catch {

@@ -12,6 +12,7 @@ const { handleValidation } = require('../middleware/validation');
 const { logAudit } = require('../audit');
 const mockStore = require('../mockStore');
 const { invalidatePrefix } = require('../cache');
+const { getFishUploadsDir } = require('../uploads');
 
 /*
   Admin routes.
@@ -62,7 +63,8 @@ function extensionForMime(mime) {
   return null;
 }
 
-const fishUploadsDir = path.join(__dirname, '..', '..', 'uploads', 'fish');
+const isProd = process.env.NODE_ENV === 'production';
+const fishUploadsDir = getFishUploadsDir({ isProd });
 try {
   fs.mkdirSync(fishUploadsDir, { recursive: true });
 } catch {
@@ -93,6 +95,15 @@ const uploadFishImage = multer({
 });
 
 function uploadSingleFishImage(req, res, next) {
+  try {
+    fs.accessSync(fishUploadsDir, fs.constants.W_OK);
+  } catch {
+    return res.status(500).json({
+      message:
+        'Upload directory is not writable on this server. Configure UPLOADS_DIR to a writable path (or attach a persistent disk).',
+    });
+  }
+
   uploadFishImage.single('image')(req, res, (err) => {
     if (!err) return next();
     return res.status(400).json({ message: err.message || 'Upload failed' });
