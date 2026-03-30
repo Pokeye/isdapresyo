@@ -144,6 +144,25 @@ Log in with the admin user you created.
 ### Free tier caveat
 - Render free services may sleep/stop when idle; background prediction scheduling won’t run while asleep.
 
+### Import fails with “duplicate key value violates unique constraint fish_prices_pkey”
+This happens when you bulk-import rows that include `id` values that collide with rows already in the table.
+
+**Option A (recommended):** import without the `id` column.
+
+**Option B (wipe then import with `id`):**
+1. Connect to your Render Postgres (pgAdmin works) and open a SQL/query tool.
+2. Run:
+   - `TRUNCATE TABLE public.fish_prices RESTART IDENTITY;`
+3. Import your CSV again (including the `id` column if you want).
+4. IMPORTANT: if you imported explicit `id` values, sync the sequence so future inserts don’t re-use `id=1`:
+   - `SELECT setval(pg_get_serial_sequence('public.fish_prices','id'), (SELECT COALESCE(MAX(id), 1) FROM public.fish_prices));`
+5. Quick verify:
+   - `SELECT COUNT(*) FROM public.fish_prices;`
+
+Notes:
+- If you’re also importing `gas_prices` with explicit `id`, repeat the same pattern for `public.gas_prices`.
+- If you already generated predictions, it’s simplest to re-generate them after importing real data.
+
 ---
 
 ## Reference

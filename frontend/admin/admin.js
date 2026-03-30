@@ -56,6 +56,13 @@ const dlGasCsvBtn = document.getElementById('dlGasCsvBtn');
 const dlPredCsvBtn = document.getElementById('dlPredCsvBtn');
 const dlRunSummaryBtn = document.getElementById('dlRunSummaryBtn');
 
+const fishImageFileEl = document.getElementById('fish_image_file');
+const uploadFishImageBtn = document.getElementById('uploadFishImageBtn');
+const fishImageStatusEl = document.getElementById('fishImageStatus');
+const fishImagePreviewWrapEl = document.getElementById('fishImagePreviewWrap');
+const fishImagePreviewEl = document.getElementById('fishImagePreview');
+const fishImagePreviewCaptionEl = document.getElementById('fishImagePreviewCaption');
+
 let demoMode = false;
 let loadedFishPriceId = null;
 
@@ -303,6 +310,47 @@ function setAdminStatus(msg) {
   adminStatus.textContent = msg || '';
 }
 
+function setFishImageStatus(msg) {
+  if (!fishImageStatusEl) return;
+  fishImageStatusEl.textContent = msg || '';
+}
+
+function resolveAssetUrl(maybeUrl) {
+  const raw = maybeUrl == null ? '' : String(maybeUrl).trim();
+  if (!raw) return null;
+  if (/^data:/i.test(raw)) return raw;
+  if (/^https?:\/\//i.test(raw)) return raw;
+  if (raw.startsWith('/')) return `${API_BASE}${raw}`;
+  return `${API_BASE}/${raw}`;
+}
+
+function setFishImagePreview(fishType, imageUrl) {
+  if (!fishImagePreviewWrapEl || !fishImagePreviewEl) return;
+
+  const ft = fishType ? String(fishType).trim() : '';
+  const resolved = resolveAssetUrl(imageUrl);
+
+  if (!ft || !resolved) {
+    fishImagePreviewWrapEl.classList.add('d-none');
+    fishImagePreviewEl.removeAttribute('src');
+    fishImagePreviewEl.alt = '';
+    fishImagePreviewEl.onerror = null;
+    if (fishImagePreviewCaptionEl) fishImagePreviewCaptionEl.textContent = '';
+    return;
+  }
+
+  fishImagePreviewEl.onerror = () => {
+    fishImagePreviewEl.onerror = null;
+    fishImagePreviewWrapEl.classList.add('d-none');
+  };
+  fishImagePreviewEl.src = resolved;
+  fishImagePreviewEl.alt = `Picture of ${ft}`;
+  if (fishImagePreviewCaptionEl) {
+    fishImagePreviewCaptionEl.textContent = ft;
+  }
+  fishImagePreviewWrapEl.classList.remove('d-none');
+}
+
 function setCompleteness(html) {
   if (!completenessEl) return;
   completenessEl.innerHTML = html || '';
@@ -362,6 +410,9 @@ function clearForm() {
   loadedFishPriceId = null;
   syncLoadedFishActions();
   setCompleteness('');
+  setFishImageStatus('');
+  if (fishImageFileEl) fishImageFileEl.value = '';
+  setFishImagePreview(null, null);
 }
 
 function fillForm(row) {
@@ -373,9 +424,39 @@ function fillForm(row) {
   // Default to today when editing so the update date reflects the change.
   dateEl.value = localIsoToday();
   syncLoadedFishActions();
+  setFishImagePreview(row.fish_type, row.image_url);
   updateCompletenessIndicators(row.fish_type).catch(() => {
     // best-effort
   });
+}
+
+async function uploadFishImage(fishType, file) {
+  const token = getToken();
+  if (!token) throw new Error('Not logged in.');
+  if (!fishType) throw new Error('Enter a fish type first.');
+  if (!file) throw new Error('Pick an image file first.');
+
+  const form = new FormData();
+  form.append('image', file);
+
+  const res = await fetch(
+    `${API_BASE}/api/admin/fish-types/${encodeURIComponent(fishType)}/image`,
+    {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+      body: form,
+    }
+  );
+
+  const isJson = (res.headers.get('content-type') || '').includes('application/json');
+  const body = isJson ? await res.json().catch(() => null) : await res.text().catch(() => null);
+  if (!res.ok) {
+    const msg = body && body.message ? body.message : `Upload failed (${res.status})`;
+    throw new Error(msg);
+  }
+  return body;
 }
 
 function computeAvgFromMinMax() {
@@ -1087,6 +1168,30 @@ if (deleteBtn) {
       setAdminStatus('Deleted.');
     } catch (e) {
       setAdminStatus(e.message);
+    }
+  });
+}
+
+if (uploadFishImageBtn) {
+  uploadFishImageBtn.addEventListener('click', async () => {
+    const fishType = fishTypeEl ? fishTypeEl.value.trim() : '';
+    const file = fishImageFileEl && fishImageFileEl.files ? fishImageFileEl.files[0] : null;
+    if (!fishType) {
+      setFishImageStatus('Enter a Fish type first.');
+      return;
+    }
+    if (!file) {
+      setFishImageStatus('Choose an image file first.');
+      return;
+    }
+
+    try {
+      setFishImageStatus('Uploading…');
+      const r = await uploadFishImage(fishType, file);
+      setFishImagePreview(r.fish_type || fishType, r.image_url);
+      setFishImageStatus('Uploaded.');
+    } catch (e) {
+      setFishImageStatus(e.message || 'Upload failed.');
     }
   });
 }

@@ -42,6 +42,14 @@ function isDemoMode() {
   return process.env.NODE_ENV !== 'production' && !process.env.DATABASE_URL;
 }
 
+function isMissingAssetsTable(err) {
+  return (
+    err &&
+    String(err.code || '') === '42P01' &&
+    String(err.message || '').toLowerCase().includes('fish_type_assets')
+  );
+}
+
 function validatePriceBands() {
   // Cross-field validation for the min/max/avg relationship.
   // We attach this to `avg_price` so the error points to a single field.
@@ -73,9 +81,26 @@ router.get('/fish-types', asyncHandler(async (_req, res) => {
   const cached = getCached(cacheKey);
   if (cached) return res.json(cached);
 
-  const result = await pool.query(
-    'SELECT fish_type FROM fish_prices GROUP BY fish_type ORDER BY fish_type ASC'
-  );
+  let result;
+  try {
+    // Include fish types that may exist only as assets (e.g., image uploaded before any price rows).
+    result = await pool.query(
+      `SELECT fish_type
+       FROM (
+         SELECT fish_type FROM fish_prices
+         UNION
+         SELECT fish_type FROM fish_type_assets
+       ) t
+       ORDER BY fish_type ASC`
+    );
+  } catch (e) {
+    if (!isMissingAssetsTable(e)) throw e;
+    // Backward-compatible fallback if schema hasn't been updated yet.
+    result = await pool.query(
+      'SELECT fish_type FROM fish_prices GROUP BY fish_type ORDER BY fish_type ASC'
+    );
+  }
+
   const fishTypes = result.rows.map((r) => r.fish_type);
   setCached(cacheKey, fishTypes, CACHE_TTL_MS);
   return res.json(fishTypes);
@@ -91,12 +116,33 @@ router.get('/fish-prices', asyncHandler(async (_req, res) => {
   const cached = getCached(cacheKey);
   if (cached) return res.json(cached);
 
-  const result = await pool.query(
-    `SELECT DISTINCT ON (fish_type)
-      id, fish_type, min_price, max_price, avg_price, date_updated::text AS date_updated
-     FROM fish_prices
-     ORDER BY fish_type, date_updated DESC, id DESC`
-  );
+  let result;
+  try {
+    result = await pool.query(
+      `SELECT DISTINCT ON (fp.fish_type)
+        fp.id,
+        fp.fish_type,
+        fp.min_price,
+        fp.max_price,
+        fp.avg_price,
+        fp.date_updated::text AS date_updated,
+        a.image_url
+       FROM fish_prices fp
+       LEFT JOIN fish_type_assets a
+         ON a.fish_type = fp.fish_type
+       ORDER BY fp.fish_type, fp.date_updated DESC, fp.id DESC`
+    );
+  } catch (e) {
+    if (!isMissingAssetsTable(e)) throw e;
+    // Backward-compatible fallback if schema hasn't been updated yet.
+    result = await pool.query(
+      `SELECT DISTINCT ON (fish_type)
+        id, fish_type, min_price, max_price, avg_price, date_updated::text AS date_updated,
+        NULL::text AS image_url
+       FROM fish_prices
+       ORDER BY fish_type, date_updated DESC, id DESC`
+    );
+  }
 
   setCached(cacheKey, result.rows, CACHE_TTL_MS);
   return res.json(result.rows);
@@ -123,23 +169,59 @@ router.get(
     const cached = getCached(cacheKey);
     if (cached) return res.json(cached);
 
-    const result = await pool.query(
-      `WITH latest AS (
-         SELECT MAX(date_updated) AS max_date
+    let result;
+    try {
+      result = await pool.query(
+        `WITH latest AS (
+           SELECT MAX(date_updated) AS max_date
+           FROM fish_prices
+           WHERE fish_type = $1
+         )
+         SELECT fp.id,
+                fp.fish_type,
+                fp.min_price,
+                fp.max_price,
+                fp.avg_price,
+                fp.date_updated::text AS date_updated,
+                a.image_url
+         FROM fish_prices fp
+         LEFT JOIN fish_type_assets a
+           ON a.fish_type = fp.fish_type
+         WHERE fp.fish_type = $1
+           AND (
+             (SELECT max_date FROM latest) IS NULL
+             OR fp.date_updated >= ((SELECT max_date FROM latest) - ($2::int * INTERVAL '1 day'))
+           )
+         ORDER BY fp.date_updated ASC, fp.id ASC
+         LIMIT 600`,
+        [fishType, daysBack]
+      );
+    } catch (e) {
+      if (!isMissingAssetsTable(e)) throw e;
+      result = await pool.query(
+        `WITH latest AS (
+           SELECT MAX(date_updated) AS max_date
+           FROM fish_prices
+           WHERE fish_type = $1
+         )
+         SELECT id,
+                fish_type,
+                min_price,
+                max_price,
+                avg_price,
+                date_updated::text AS date_updated,
+                NULL::text AS image_url
          FROM fish_prices
          WHERE fish_type = $1
-       )
-       SELECT id, fish_type, min_price, max_price, avg_price, date_updated::text AS date_updated
-       FROM fish_prices
-       WHERE fish_type = $1
-         AND (
-           (SELECT max_date FROM latest) IS NULL
-           OR date_updated >= ((SELECT max_date FROM latest) - ($2::int * INTERVAL '1 day'))
-         )
-       ORDER BY date_updated ASC, id ASC
-       LIMIT 600`,
-      [fishType, daysBack]
-    );
+           AND (
+             (SELECT max_date FROM latest) IS NULL
+             OR date_updated >= ((SELECT max_date FROM latest) - ($2::int * INTERVAL '1 day'))
+           )
+         ORDER BY date_updated ASC, id ASC
+         LIMIT 600`,
+        [fishType, daysBack]
+      );
+    }
 
     setCached(cacheKey, result.rows, HISTORY_CACHE_TTL_MS);
     return res.json(result.rows);
@@ -165,14 +247,41 @@ router.get(
     const cached = getCached(cacheKey);
     if (cached) return res.json(cached);
 
-    const result = await pool.query(
-      `SELECT id, fish_type, min_price, max_price, avg_price, date_updated::text AS date_updated
-       FROM fish_prices
-       WHERE fish_type = $1
-       ORDER BY date_updated DESC, id DESC
-       LIMIT 1`,
-      [fishType]
-    );
+    let result;
+    try {
+      result = await pool.query(
+        `SELECT fp.id,
+                fp.fish_type,
+                fp.min_price,
+                fp.max_price,
+                fp.avg_price,
+                fp.date_updated::text AS date_updated,
+                a.image_url
+         FROM fish_prices fp
+         LEFT JOIN fish_type_assets a
+           ON a.fish_type = fp.fish_type
+         WHERE fp.fish_type = $1
+         ORDER BY fp.date_updated DESC, fp.id DESC
+         LIMIT 1`,
+        [fishType]
+      );
+    } catch (e) {
+      if (!isMissingAssetsTable(e)) throw e;
+      result = await pool.query(
+        `SELECT id,
+                fish_type,
+                min_price,
+                max_price,
+                avg_price,
+                date_updated::text AS date_updated,
+                NULL::text AS image_url
+         FROM fish_prices
+         WHERE fish_type = $1
+         ORDER BY date_updated DESC, id DESC
+         LIMIT 1`,
+        [fishType]
+      );
+    }
 
     const row = result.rows[0];
     if (!row) return res.status(404).json({ message: 'Not found' });

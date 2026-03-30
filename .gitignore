@@ -7,6 +7,12 @@ node_modules/
 # Logs
 backend/logs/*.log
 
+# Uploaded assets (stored on server filesystem)
+backend/uploads/**
+!backend/uploads/.gitkeep
+!backend/uploads/fish/
+!backend/uploads/fish/.gitkeep
+
 # OS
 .DS_Store
 Thumbs.db

@@ -120,6 +120,24 @@ app.use(
 
 app.use(express.json({ limit: '64kb' }));
 
+// Publicly serve uploaded assets (fish photos, etc.).
+// NOTE: This stores files on the server filesystem. In serverless/ephemeral hosting,
+// use object storage instead.
+const uploadsRoot = path.join(__dirname, '..', 'uploads');
+try {
+  fs.mkdirSync(uploadsRoot, { recursive: true });
+} catch {
+  // ignore
+}
+app.use(
+  '/uploads',
+  express.static(uploadsRoot, {
+    maxAge: isProd ? '30d' : 0,
+    etag: true,
+    fallthrough: true,
+  })
+);
+
 // Basic rate-limits to reduce abuse and accidental flooding.
 
 const apiLimiter = rateLimit({

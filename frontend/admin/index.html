@@ -89,6 +89,25 @@
               <button id="clearBtn" class="btn btn-outline-secondary btn-lg" title="Clears the form and resets Date updated to today.">Clear</button>
             </div>
           </div>
+
+          <div class="row g-2 mt-2">
+            <div class="col-12 col-md-6">
+              <label class="form-label" for="fish_image_file">Fish image</label>
+              <input id="fish_image_file" type="file" class="form-control" accept="image/png,image/jpeg,image/webp" />
+              <div class="small text-muted mt-1">Upload JPG/PNG/WEBP (max ~3MB). Linked to the Fish type field.</div>
+            </div>
+            <div class="col-12 col-md-3 d-grid align-items-end">
+              <button id="uploadFishImageBtn" class="btn btn-outline-primary btn-lg" type="button" title="Uploads the selected image and links it to the fish type.">Upload image</button>
+            </div>
+            <div class="col-12">
+              <div id="fishImageStatus" class="small text-muted"></div>
+              <div id="fishImagePreviewWrap" class="mt-2 d-none text-center">
+                <img id="fishImagePreview" class="img-fluid rounded-3 border fish-photo" alt="" loading="lazy" />
+                <div id="fishImagePreviewCaption" class="small text-muted mt-2"></div>
+              </div>
+            </div>
+          </div>
+
           <div id="adminStatus" class="small text-muted mt-2"></div>
           <div class="small text-muted mt-1">
             <div class="fw-semibold">What these buttons do</div>

@@ -470,17 +470,40 @@ function fishSvgDataUrl(label) {
   return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
 }
 
-function setFishImage(fishType) {
+function resolveAssetUrl(maybeUrl) {
+  const raw = maybeUrl == null ? '' : String(maybeUrl).trim();
+  if (!raw) return null;
+  if (/^data:/i.test(raw)) return raw;
+  if (/^https?:\/\//i.test(raw)) return raw;
+  if (raw.startsWith('/')) return `${API_BASE}${raw}`;
+  return `${API_BASE}/${raw}`;
+}
+
+function setFishImage(fishType, imageUrl) {
   if (!fishImageWrapEl || !fishImageEl) return;
   if (!fishType) {
     fishImageWrapEl.classList.add('d-none');
     fishImageEl.removeAttribute('src');
     fishImageEl.alt = '';
+    fishImageEl.onerror = null;
     if (fishImageCaptionEl) fishImageCaptionEl.textContent = '';
     return;
   }
 
-  fishImageEl.src = fishSvgDataUrl(fishType);
+  const resolved = resolveAssetUrl(imageUrl);
+  fishImageEl.onerror = null;
+
+  if (resolved) {
+    // If the uploaded image 404s, fall back to the inline SVG.
+    fishImageEl.onerror = () => {
+      fishImageEl.onerror = null;
+      fishImageEl.src = fishSvgDataUrl(fishType);
+    };
+    fishImageEl.src = resolved;
+  } else {
+    fishImageEl.src = fishSvgDataUrl(fishType);
+  }
+
   fishImageEl.alt = `Picture of ${fishType}`;
   if (fishImageCaptionEl) fishImageCaptionEl.textContent = fishType;
   fishImageWrapEl.classList.remove('d-none');
@@ -615,7 +638,7 @@ async function loadFishPrice(fishType) {
   if (!fishType) return;
   setStatus(usingMock ? 'Showing sample data.' : 'Fetching predicted prices…');
   resultEl.classList.add('d-none');
-  setFishImage(fishType);
+  setFishImage(fishType, null);
 
   const cacheKey = `price:${String(fishType).toLowerCase()}`;
   const cachedRow = loadClientCache(cacheKey, 60 * 1000);
@@ -633,7 +656,11 @@ async function loadFishPrice(fishType) {
     // Fallback to latest recorded prices if predictions are unavailable.
     try {
       row = await apiGet(`/api/fish-prices/${encodeURIComponent(fishType)}`);
-    } catch {
+    } catch (e) {
+      if (e && typeof e.status === 'number' && e.status === 404) {
+        setStatus('No data yet for this fish type.');
+        return;
+      }
       if (ALLOW_MOCK_FALLBACK) {
         usingMock = true;
         row = MOCK_BY_TYPE.get(fishType);
@@ -662,7 +689,7 @@ function renderRow(row, fishType) {
   if (updatedBadgeEl) updatedBadgeEl.classList.add('d-none');
   if (currentTimeEl) currentTimeEl.textContent = formatFetchedTimestamp(row.date_updated);
   setFavoriteButtonState(fishType);
-  setFishImage(fishType);
+  setFishImage(fishType, row.image_url);
 
   markLastSeen(fishType, row.date_updated);
 
@@ -674,7 +701,7 @@ fishSelect.addEventListener('change', async () => {
   // On selection change, re-fetch and re-render the price card.
   const fishType = decodeURIComponent(fishSelect.value);
   setFavoriteButtonState(fishType);
-  setFishImage(fishType);
+  setFishImage(fishType, null);
   try {
     await loadFishPrice(fishType);
   } catch (e) {

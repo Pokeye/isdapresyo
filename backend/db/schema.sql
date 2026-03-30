@@ -48,3 +48,14 @@ CREATE UNIQUE INDEX IF NOT EXISTS ux_predictions_fish_date_algo
 
 CREATE INDEX IF NOT EXISTS idx_predictions_date
   ON predictions (prediction_date DESC, fish_type ASC, id DESC);
+
+-- Fish type assets (e.g., image) linked by fish_type string.
+-- We keep this separate from fish_prices so existing code can remain mostly unchanged.
+CREATE TABLE IF NOT EXISTS fish_type_assets (
+  fish_type VARCHAR(100) PRIMARY KEY,
+  image_url TEXT,
+  updated_at TIMESTAMP NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_fish_type_assets_updated_at
+  ON fish_type_assets (updated_at DESC, fish_type ASC);

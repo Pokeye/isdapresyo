@@ -14,6 +14,14 @@ const CACHE_TTL_MS = 60 * 1000;
 
 const asyncHandler = (fn) => (req, res, next) => Promise.resolve(fn(req, res, next)).catch(next);
 
+function isMissingAssetsTable(err) {
+  return (
+    err &&
+    String(err.code || '') === '42P01' &&
+    String(err.message || '').toLowerCase().includes('fish_type_assets')
+  );
+}
+
 router.get(
   '/predictions',
   [
@@ -107,6 +115,7 @@ router.get(
           max_price: r.predicted_max_price,
           avg_price: r.predicted_avg_price,
           date_updated: String(r.prediction_date),
+          image_url: mockStore.getFishTypeImageUrl(r.fish_type),
         }));
 
       return res.json(rows);
@@ -116,26 +125,55 @@ router.get(
     const cached = getCached(cacheKey);
     if (cached) return res.json(cached);
 
-    const result = await pool.query(
-      `WITH next_date AS (
-         SELECT MIN(prediction_date) AS d
-         FROM predictions
-         WHERE prediction_date >= CURRENT_DATE
-       )
-       SELECT DISTINCT ON (p.fish_type)
-         p.id,
-         p.fish_type,
-         p.predicted_min_price AS min_price,
-         p.predicted_max_price AS max_price,
-         p.predicted_avg_price AS avg_price,
-         p.prediction_date::text AS date_updated
-       FROM predictions p
-       JOIN next_date nd ON p.prediction_date = nd.d
-       ORDER BY p.fish_type,
-                ${algoPreferenceOrderSql()} ASC,
-                p.created_at DESC,
-                p.id DESC`
-    );
+    let result;
+    try {
+      result = await pool.query(
+        `WITH next_date AS (
+           SELECT MIN(prediction_date) AS d
+           FROM predictions
+           WHERE prediction_date >= CURRENT_DATE
+         )
+         SELECT DISTINCT ON (p.fish_type)
+           p.id,
+           p.fish_type,
+           p.predicted_min_price AS min_price,
+           p.predicted_max_price AS max_price,
+           p.predicted_avg_price AS avg_price,
+           p.prediction_date::text AS date_updated,
+           a.image_url
+         FROM predictions p
+         JOIN next_date nd ON p.prediction_date = nd.d
+         LEFT JOIN fish_type_assets a
+           ON a.fish_type = p.fish_type
+         ORDER BY p.fish_type,
+                  ${algoPreferenceOrderSql()} ASC,
+                  p.created_at DESC,
+                  p.id DESC`
+      );
+    } catch (e) {
+      if (!isMissingAssetsTable(e)) throw e;
+      result = await pool.query(
+        `WITH next_date AS (
+           SELECT MIN(prediction_date) AS d
+           FROM predictions
+           WHERE prediction_date >= CURRENT_DATE
+         )
+         SELECT DISTINCT ON (p.fish_type)
+           p.id,
+           p.fish_type,
+           p.predicted_min_price AS min_price,
+           p.predicted_max_price AS max_price,
+           p.predicted_avg_price AS avg_price,
+           p.prediction_date::text AS date_updated,
+           NULL::text AS image_url
+         FROM predictions p
+         JOIN next_date nd ON p.prediction_date = nd.d
+         ORDER BY p.fish_type,
+                  ${algoPreferenceOrderSql()} ASC,
+                  p.created_at DESC,
+                  p.id DESC`
+      );
+    }
 
     setCached(cacheKey, result.rows, CACHE_TTL_MS);
     return res.json(result.rows);
@@ -165,6 +203,7 @@ router.get(
         max_price: next.predicted_max_price,
         avg_price: next.predicted_avg_price,
         date_updated: String(next.prediction_date),
+        image_url: mockStore.getFishTypeImageUrl(next.fish_type),
       });
     }
 
@@ -172,23 +211,49 @@ router.get(
     const cached = getCached(cacheKey);
     if (cached) return res.json(cached);
 
-    const result = await pool.query(
-      `SELECT id,
-              fish_type,
-              predicted_min_price AS min_price,
-              predicted_max_price AS max_price,
-              predicted_avg_price AS avg_price,
-              prediction_date::text AS date_updated
-       FROM predictions
-       WHERE fish_type = $1
-         AND prediction_date >= CURRENT_DATE
-       ORDER BY prediction_date ASC,
-                ${algoPreferenceOrderSql()} ASC,
-                created_at DESC,
-                id DESC
-       LIMIT 1`,
-      [fishType]
-    );
+    let result;
+    try {
+      result = await pool.query(
+        `SELECT p.id,
+                p.fish_type,
+                p.predicted_min_price AS min_price,
+                p.predicted_max_price AS max_price,
+                p.predicted_avg_price AS avg_price,
+                p.prediction_date::text AS date_updated,
+                a.image_url
+         FROM predictions p
+         LEFT JOIN fish_type_assets a
+           ON a.fish_type = p.fish_type
+         WHERE p.fish_type = $1
+           AND prediction_date >= CURRENT_DATE
+         ORDER BY prediction_date ASC,
+                  ${algoPreferenceOrderSql()} ASC,
+                  created_at DESC,
+                  id DESC
+         LIMIT 1`,
+        [fishType]
+      );
+    } catch (e) {
+      if (!isMissingAssetsTable(e)) throw e;
+      result = await pool.query(
+        `SELECT id,
+                fish_type,
+                predicted_min_price AS min_price,
+                predicted_max_price AS max_price,
+                predicted_avg_price AS avg_price,
+                prediction_date::text AS date_updated,
+                NULL::text AS image_url
+         FROM predictions
+         WHERE fish_type = $1
+           AND prediction_date >= CURRENT_DATE
+         ORDER BY prediction_date ASC,
+                  ${algoPreferenceOrderSql()} ASC,
+                  created_at DESC,
+                  id DESC
+         LIMIT 1`,
+        [fishType]
+      );
+    }
 
     const row = result.rows[0];
     if (!row) return res.status(404).json({ message: 'Not found' });

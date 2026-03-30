@@ -32,6 +32,14 @@ let nextGasId = Math.max(...gasPrices.map((r) => r.id), 0) + 1;
 let predictions = [];
 let nextPredictionId = 1;
 
+// Demo-mode fish type assets (e.g., uploaded image URL).
+// Key: normalized fish_type string.
+const fishTypeAssets = new Map();
+
+function normalizeFishType(input) {
+  return String(input || '').trim();
+}
+
 function toIsoDate(value) {
   // Keep demo-mode dates consistent with the DB shape (YYYY-MM-DD).
   if (!value) return new Date().toISOString().slice(0, 10);
@@ -52,30 +60,37 @@ function toIsoDate(value) {
 function listLatestByType() {
   const latest = new Map();
   for (const row of rows) {
-    const key = String(row.fish_type);
+    const key = normalizeFishType(row.fish_type);
     const prev = latest.get(key);
     if (!prev) {
-      latest.set(key, row);
+      latest.set(key, { ...row, fish_type: key });
       continue;
     }
 
     const prevDate = new Date(prev.date_updated).getTime();
     const rowDate = new Date(row.date_updated).getTime();
     if (rowDate > prevDate || (rowDate === prevDate && row.id > prev.id)) {
-      latest.set(key, row);
+      latest.set(key, { ...row, fish_type: key });
     }
   }
 
-  return Array.from(latest.values()).sort((a, b) => String(a.fish_type).localeCompare(String(b.fish_type)));
+  return Array.from(latest.values())
+    .map((r) => ({ ...r, image_url: fishTypeAssets.get(normalizeFishType(r.fish_type)) || null }))
+    .sort((a, b) => String(a.fish_type).localeCompare(String(b.fish_type)));
 }
 
 function listFishTypes() {
-  return Array.from(new Set(rows.map((r) => r.fish_type))).sort((a, b) => String(a).localeCompare(String(b)));
+  const fromPrices = rows.map((r) => normalizeFishType(r.fish_type));
+  const fromAssets = Array.from(fishTypeAssets.keys()).map((k) => normalizeFishType(k));
+  return Array.from(new Set([...fromPrices, ...fromAssets]))
+    .filter(Boolean)
+    .sort((a, b) => String(a).localeCompare(String(b)));
 }
 
 function getLatestByFishType(fishType) {
+  const normalized = normalizeFishType(fishType);
   const matches = rows
-    .filter((r) => String(r.fish_type) === String(fishType))
+    .filter((r) => normalizeFishType(r.fish_type) === normalized)
     .sort((a, b) => {
       const ad = new Date(a.date_updated).getTime();
       const bd = new Date(b.date_updated).getTime();
@@ -83,20 +98,22 @@ function getLatestByFishType(fishType) {
       return b.id - a.id;
     });
 
-  return matches[0] || null;
+  const row = matches[0] || null;
+  if (!row) return null;
+  return { ...row, fish_type: normalized, image_url: fishTypeAssets.get(normalized) || null };
 }
 
 function create(row) {
   const newRow = {
     id: nextId++,
-    fish_type: String(row.fish_type).trim(),
+    fish_type: normalizeFishType(row.fish_type),
     min_price: Number(row.min_price),
     max_price: Number(row.max_price),
     avg_price: Number(row.avg_price),
     date_updated: toIsoDate(row.date_updated),
   };
   rows.push(newRow);
-  return newRow;
+  return { ...newRow, image_url: fishTypeAssets.get(newRow.fish_type) || null };
 }
 
 function update(id, row) {
@@ -105,7 +122,7 @@ function update(id, row) {
 
   const updated = {
     ...rows[idx],
-    fish_type: String(row.fish_type).trim(),
+    fish_type: normalizeFishType(row.fish_type),
     min_price: Number(row.min_price),
     max_price: Number(row.max_price),
     avg_price: Number(row.avg_price),
@@ -113,7 +130,7 @@ function update(id, row) {
   };
 
   rows[idx] = updated;
-  return updated;
+  return { ...updated, image_url: fishTypeAssets.get(updated.fish_type) || null };
 }
 
 function remove(id) {
@@ -124,11 +141,12 @@ function remove(id) {
 }
 
 function listHistoryByFishType(fishType, daysBack) {
+  const normalized = normalizeFishType(fishType);
   const cutoff = new Date();
   cutoff.setDate(cutoff.getDate() - (Number(daysBack) || 90));
 
   return rows
-    .filter((r) => String(r.fish_type) === String(fishType))
+    .filter((r) => normalizeFishType(r.fish_type) === normalized)
     .filter((r) => {
       const d = new Date(r.date_updated);
       return !Number.isNaN(d.getTime()) && d >= cutoff;
@@ -138,7 +156,22 @@ function listHistoryByFishType(fishType, daysBack) {
       const bd = new Date(b.date_updated).getTime();
       if (ad !== bd) return ad - bd;
       return a.id - b.id;
-    });
+    })
+    .map((r) => ({ ...r, fish_type: normalized, image_url: fishTypeAssets.get(normalized) || null }));
+}
+
+function setFishTypeImageUrl(fishType, imageUrl) {
+  const normalized = normalizeFishType(fishType);
+  if (!normalized) return false;
+  if (!imageUrl) fishTypeAssets.delete(normalized);
+  else fishTypeAssets.set(normalized, String(imageUrl));
+  return true;
+}
+
+function getFishTypeImageUrl(fishType) {
+  const normalized = normalizeFishType(fishType);
+  if (!normalized) return null;
+  return fishTypeAssets.get(normalized) || null;
 }
 
 function listGasPrices({ from, to } = {}) {
@@ -241,4 +274,6 @@ module.exports = {
   removeGasPrice,
   upsertPredictions,
   listPredictions,
+  setFishTypeImageUrl,
+  getFishTypeImageUrl,
 };
