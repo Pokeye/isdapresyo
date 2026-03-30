@@ -562,16 +562,20 @@ async function loadFishTypes() {
   setStatus('Loading fish types…');
   fishSelect.innerHTML = '';
 
-  const cachedTypes = loadClientCache('fish-types', 5 * 60 * 1000);
+  // Keep client cache very short so cross-device updates show quickly.
+  const cachedTypes = loadClientCache('fish-types', 30 * 1000);
+  let initialTypeFromCache = null;
   if (Array.isArray(cachedTypes) && cachedTypes.length) {
     renderFishTypes(cachedTypes);
-    // Still proceed to ensure we can fetch a price (which may use its own cache).
-    const initialType = decodeURIComponent(fishSelect.value);
-    setFavoriteButtonState(initialType);
-    setFishImage(initialType);
-    await loadFishPrice(initialType);
-    startScheduleCountdown();
-    return;
+    initialTypeFromCache = decodeURIComponent(fishSelect.value);
+    setFavoriteButtonState(initialTypeFromCache);
+    setFishImage(initialTypeFromCache, null);
+    // Best-effort: show something immediately, but still continue to fetch fresh fish types below.
+    try {
+      await loadFishPrice(initialTypeFromCache);
+    } catch {
+      // ignore
+    }
   }
 
   let fishTypes;
@@ -608,9 +612,15 @@ async function loadFishTypes() {
 
   setStatus(usingMock ? 'Showing sample data (backend not connected yet).' : statusEl.textContent);
   // Load the first fish type immediately.
+  const prevSelected = initialTypeFromCache;
+  if (prevSelected && fishTypes.includes(prevSelected)) {
+    fishSelect.value = encodeURIComponent(prevSelected);
+  }
+
   const initialType = decodeURIComponent(fishSelect.value);
   setFavoriteButtonState(initialType);
-  setFishImage(initialType);
+  setFishImage(initialType, null);
+  // If we already loaded a cached row for this fish type moments ago, loadFishPrice will be fast.
   await loadFishPrice(initialType);
 
   // Start countdown once we have a working backend.
@@ -641,7 +651,8 @@ async function loadFishPrice(fishType) {
   setFishImage(fishType, null);
 
   const cacheKey = `price:${String(fishType).toLowerCase()}`;
-  const cachedRow = loadClientCache(cacheKey, 60 * 1000);
+  // Keep client cache very short so cross-device updates show quickly.
+  const cachedRow = loadClientCache(cacheKey, 10 * 1000);
   if (cachedRow) {
     renderRow(cachedRow, fishType);
     loadAndRenderTrendChart(fishType);

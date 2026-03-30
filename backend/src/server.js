@@ -78,7 +78,11 @@ app.use(morgan('combined'));
 // Helps browsers/CDNs avoid refetching the same data repeatedly (especially during bot/traffic spikes).
 app.use((req, res, next) => {
   if (req.method === 'GET' && req.path.startsWith('/api/') && !req.path.startsWith('/api/admin')) {
-    res.setHeader('Cache-Control', 'public, max-age=60');
+    // Fish prices and fish type lists are actively edited by admins.
+    // Avoid caching them in browsers/CDNs so cross-device updates show up immediately.
+    const noStorePrefixes = ['/api/fish-types', '/api/fish-prices'];
+    const isNoStore = noStorePrefixes.some((p) => req.path === p || req.path.startsWith(`${p}/`));
+    res.setHeader('Cache-Control', isNoStore ? 'no-store' : 'public, max-age=60');
   }
   return next();
 });
