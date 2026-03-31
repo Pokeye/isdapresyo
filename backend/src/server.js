@@ -72,7 +72,15 @@ if (String(process.env.ENFORCE_HTTPS).toLowerCase() === 'true') {
   });
 }
 
-app.use(helmet());
+// Helmet defaults include `Cross-Origin-Resource-Policy: same-origin`.
+// When the frontend is hosted on a different origin (Netlify/Vercel) but images are served
+// from this backend under `/uploads`, that header will cause browsers to block those images.
+// We explicitly allow cross-origin resource loading.
+app.use(
+  helmet({
+    crossOriginResourcePolicy: { policy: 'cross-origin' },
+  })
+);
 app.use(morgan('combined'));
 
 // Basic caching for public GET endpoints.

@@ -51,6 +51,17 @@ Open:
 
 ## Deploy notes
 
+### Uploaded fish images (important)
+
+Fish photos uploaded via the admin panel are served by the backend at:
+- `GET <API_BASE>/uploads/fish/<filename>`
+
+Notes for deployments where the frontend and backend are on different domains (Netlify/Vercel + Render):
+- The backend must allow cross-origin resource loading for `/uploads/*` (this repo’s backend is configured to allow it).
+- If you store uploads on the backend filesystem (default), they may be **ephemeral** on free tiers (service restarts can wipe them).
+	- Recommended: attach a persistent disk and set `UPLOADS_DIR` (example: Render disk mount `UPLOADS_DIR=/var/data/uploads`),
+		or switch to object storage.
+
 ### Netlify (frontend) + Supabase (Postgres) + VM (backend)
 
 If you’re moving off Render/Vercel free tiers, the simplest reliable setup is:

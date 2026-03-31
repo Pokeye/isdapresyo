@@ -141,6 +141,19 @@ Log in with the admin user you created.
 - On Render, set `FRONTEND_ORIGIN=https://<vercel-domain>`
 - If you use Vercel preview URLs, you may need to include them (or temporarily allow multiple origins)
 
+### Fish images upload but don’t show (or disappear later)
+
+Two common causes:
+
+1) **Cross-origin image blocking**
+   - When the frontend is on Vercel and the backend serves images from `/uploads/*`, browsers may block the image response if the backend sends restrictive cross-origin resource headers.
+   - This repo’s backend is configured to allow cross-origin loading for uploaded images. If you customized security headers, ensure images can be loaded cross-origin.
+
+2) **Ephemeral filesystem on free tiers**
+   - Uploaded images are stored on the backend filesystem by default.
+   - On some free tiers, service restarts/sleeps can wipe local files, so images may “vanish” even though the DB still points to `/uploads/fish/...`.
+   - Fix: attach a persistent disk and set `UPLOADS_DIR` to the mounted path (example: `UPLOADS_DIR=/var/data/uploads`), or use object storage.
+
 ### Free tier caveat
 - Render free services may sleep/stop when idle; background prediction scheduling won’t run while asleep.
 
