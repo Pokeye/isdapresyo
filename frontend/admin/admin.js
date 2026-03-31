@@ -418,9 +418,9 @@ function clearForm() {
 function fillForm(row) {
   loadedFishPriceId = row.id;
   fishTypeEl.value = row.fish_type;
-  minEl.value = row.min_price;
-  maxEl.value = row.max_price;
-  avgEl.value = row.avg_price;
+  minEl.value = normalizeIntLike(row.min_price);
+  maxEl.value = normalizeIntLike(row.max_price);
+  avgEl.value = normalizeIntLike(row.avg_price);
   // Default to today when editing so the update date reflects the change.
   dateEl.value = localIsoToday();
   syncLoadedFishActions();
@@ -428,6 +428,31 @@ function fillForm(row) {
   updateCompletenessIndicators(row.fish_type).catch(() => {
     // best-effort
   });
+}
+
+function normalizeIntLike(value) {
+  const raw = value == null ? '' : String(value).trim();
+  if (!raw) return '';
+  const n = Number(raw);
+  if (!Number.isFinite(n)) return raw;
+  if (Math.abs(n - Math.round(n)) < 1e-9) return String(Math.round(n));
+  // If existing data has decimals, keep it visible; saves will enforce integers.
+  return raw;
+}
+
+function readFiniteNumberFromInput(el) {
+  const raw = el && typeof el.value === 'string' ? el.value.trim() : '';
+  if (!raw) return null;
+  const n = Number(raw);
+  if (!Number.isFinite(n)) return null;
+  return n;
+}
+
+function requireNonNegativeInteger(n, label) {
+  if (!Number.isFinite(n)) throw new Error(`Enter a valid ${label}.`);
+  if (!Number.isInteger(n)) throw new Error(`${label} must be a whole number.`);
+  if (n < 0) throw new Error(`${label} must be 0 or greater.`);
+  return n;
 }
 
 async function uploadFishImage(fishType, file) {
@@ -460,19 +485,19 @@ async function uploadFishImage(fishType, file) {
 }
 
 function computeAvgFromMinMax() {
-  const min = Number(minEl?.value);
-  const max = Number(maxEl?.value);
-  if (!Number.isFinite(min) || !Number.isFinite(max)) return null;
-  const avg = (min + max) / 2;
+  const minRaw = readFiniteNumberFromInput(minEl);
+  const maxRaw = readFiniteNumberFromInput(maxEl);
+  if (minRaw == null || maxRaw == null) return null;
+  if (!Number.isInteger(minRaw) || !Number.isInteger(maxRaw)) return null;
+  const avg = (minRaw + maxRaw) / 2;
   if (!Number.isFinite(avg)) return null;
-  return avg;
+  // Requirement: integers only. Round to the nearest whole number.
+  return Math.round(avg);
 }
 
 function formatAvg(avg) {
   if (!Number.isFinite(avg)) return '';
-  // Prefer integers when possible; otherwise 2 decimals.
-  if (Math.abs(avg - Math.round(avg)) < 1e-9) return String(Math.round(avg));
-  return avg.toFixed(2);
+  return String(Math.round(avg));
 }
 
 function syncAvgFromMinMax() {
@@ -514,16 +539,15 @@ function fillGasForm(row) {
 function parsePayload() {
   // Build the request body for create/update.
   const fishType = fishTypeEl.value.trim();
-  const min = Number(minEl.value);
-  const max = Number(maxEl.value);
-
-  if (!Number.isFinite(min) || !Number.isFinite(max)) {
-    throw new Error('Enter valid Min and Max prices.');
-  }
+  const minRaw = readFiniteNumberFromInput(minEl);
+  const maxRaw = readFiniteNumberFromInput(maxEl);
+  const min = requireNonNegativeInteger(minRaw, 'Min price');
+  const max = requireNonNegativeInteger(maxRaw, 'Max price');
+  if (min > max) throw new Error('Min price must be less than or equal to Max price.');
 
   const computedAvg = computeAvgFromMinMax();
   if (computedAvg == null) {
-    throw new Error('Enter Min and Max to auto-calculate Avg.');
+    throw new Error('Enter whole-number Min and Max to auto-calculate Avg.');
   }
 
   // Keep the UI field in sync (Avg is read-only).
@@ -533,7 +557,7 @@ function parsePayload() {
     fish_type: fishType,
     min_price: min,
     max_price: max,
-    avg_price: computedAvg,
+    avg_price: Math.round(computedAvg),
   };
 
   if (dateEl.value) payload.date_updated = dateEl.value;
@@ -989,20 +1013,28 @@ async function updateCompletenessIndicators(fishType) {
   setCompleteness(html);
 }
 
-async function refreshGasTable() {
+async function refreshGasTable({ focusDate } = {}) {
   if (!gasRowsEl) return;
   setGasStatus('Loading…');
 
   const DAYS_BACK = 150;
   const today = new Date();
   today.setHours(0, 0, 0, 0);
-  const fromIso = isoDate(addDays(today, -DAYS_BACK));
-  const toIso = isoDate(today);
+  const focus = focusDate ? new Date(String(focusDate)) : null;
+  if (focus && Number.isFinite(focus.getTime())) focus.setHours(0, 0, 0, 0);
+
+  const toDate = focus && focus > today ? focus : today;
+  const baseFrom = addDays(toDate, -DAYS_BACK);
+  const fromDate = focus && focus < baseFrom ? focus : baseFrom;
+
+  const fromIso = isoDate(fromDate);
+  const toIso = isoDate(toDate);
 
   const rows = await api(`/api/gas-prices?from=${fromIso}&to=${toIso}`);
 
   const list = Array.isArray(rows) ? rows : [];
-  const last = list.slice(-40).reverse();
+  // Show the full window (up to 150 rows because `date` is unique).
+  const last = list.slice(-DAYS_BACK).reverse();
 
   gasRowsEl.innerHTML = last
     .map(
@@ -1211,7 +1243,7 @@ if (upsertGasBtn) {
     try {
       setGasStatus('Saving…');
       await api('/api/gas-prices', { method: 'POST', body: JSON.stringify({ date, price }) });
-      await refreshGasTable();
+      await refreshGasTable({ focusDate: date });
       setGasStatus('Saved.');
     } catch (e) {
       setGasStatus(e.message);
