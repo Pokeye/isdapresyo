@@ -118,6 +118,47 @@ function addDays(date, days) {
 
 let trendChart = null;
 
+// INP improvement: trend chart rendering can be relatively heavy (Chart.js + data transforms).
+// Defer it so a fish selection interaction can paint quickly.
+let scheduledTrendHandle = null;
+let scheduledTrendKind = null;
+let scheduledTrendSeq = 0;
+
+function cancelScheduledTrend() {
+  if (scheduledTrendHandle == null) return;
+
+  try {
+    if (scheduledTrendKind === 'idle' && typeof cancelIdleCallback === 'function') {
+      cancelIdleCallback(scheduledTrendHandle);
+    } else {
+      clearTimeout(scheduledTrendHandle);
+    }
+  } catch {
+    // ignore
+  }
+
+  scheduledTrendHandle = null;
+  scheduledTrendKind = null;
+}
+
+function scheduleTrendChart(fishType) {
+  cancelScheduledTrend();
+  const seq = ++scheduledTrendSeq;
+  const run = () => {
+    if (seq !== scheduledTrendSeq) return;
+    loadAndRenderTrendChart(fishType);
+  };
+
+  if (typeof requestIdleCallback === 'function') {
+    scheduledTrendKind = 'idle';
+    scheduledTrendHandle = requestIdleCallback(run, { timeout: 1200 });
+    return;
+  }
+
+  scheduledTrendKind = 'timeout';
+  scheduledTrendHandle = setTimeout(run, 0);
+}
+
 function destroyTrendChart() {
   if (trendChart) {
     trendChart.destroy();
@@ -655,7 +696,7 @@ async function loadFishPrice(fishType) {
   const cachedRow = loadClientCache(cacheKey, 10 * 1000);
   if (cachedRow) {
     renderRow(cachedRow, fishType);
-    loadAndRenderTrendChart(fishType);
+    scheduleTrendChart(fishType);
     return;
   }
 
@@ -688,7 +729,7 @@ async function loadFishPrice(fishType) {
 
   if (row) saveClientCache(cacheKey, row);
   renderRow(row, fishType);
-  loadAndRenderTrendChart(fishType);
+  scheduleTrendChart(fishType);
 }
 
 function renderRow(row, fishType) {
@@ -708,16 +749,18 @@ function renderRow(row, fishType) {
   setStatus(usingMock ? 'Showing sample data (backend not connected yet).' : '');
 }
 
-fishSelect.addEventListener('change', async () => {
+fishSelect.addEventListener('change', () => {
   // On selection change, re-fetch and re-render the price card.
   const fishType = decodeURIComponent(fishSelect.value);
   setFavoriteButtonState(fishType);
   setFishImage(fishType, null);
-  try {
-    await loadFishPrice(fishType);
-  } catch (e) {
-    setStatus('Failed to load price.');
-  }
+
+  // Defer fetch/render work so this interaction can paint quickly.
+  setTimeout(() => {
+    loadFishPrice(fishType).catch(() => {
+      setStatus('Failed to load price.');
+    });
+  }, 0);
 });
 
 if (favoriteBtn) {
