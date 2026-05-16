@@ -23,7 +23,7 @@ const cors = require('cors');
 const rateLimit = require('express-rate-limit');
 const morgan = require('morgan');
 
-const { pool } = require('./db');
+const { pool, safeDbTargetSummary } = require('./db');
 const { fishPricesRouter } = require('./routes/fishPrices');
 const { adminRouter } = require('./routes/admin');
 const { gasPricesRouter } = require('./routes/gasPrices');
@@ -233,11 +233,55 @@ app.use((err, _req, res, _next) => {
 
 const port = Number(process.env.PORT || 3000);
 
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function isTransientDbError(err) {
+  const code = err && err.code ? String(err.code) : '';
+  const msg = err && err.message ? String(err.message) : String(err || '');
+
+  // Common transient network-ish failures (cold starts, restarts, brief interruptions).
+  if (['ECONNRESET', 'ETIMEDOUT', 'EPIPE', 'ENETUNREACH', 'EHOSTUNREACH'].includes(code)) return true;
+
+  // pg sometimes wraps this as a plain Error without a useful code.
+  if (msg.toLowerCase().includes('connection terminated unexpectedly')) return true;
+
+  // Postgres server restarting / shutting down.
+  if (['57P01', '57P02', '57P03'].includes(code)) return true;
+
+  return false;
+}
+
+async function withDbRetry(label, fn, options = {}) {
+  const retries = Number.isFinite(Number(options.retries)) ? Number(options.retries) : 6;
+  const baseDelayMs = Number.isFinite(Number(options.baseDelayMs)) ? Number(options.baseDelayMs) : 400;
+  const maxDelayMs = Number.isFinite(Number(options.maxDelayMs)) ? Number(options.maxDelayMs) : 5000;
+
+  let attempt = 0;
+  while (true) {
+    try {
+      return await fn();
+    } catch (e) {
+      attempt++;
+      const transient = isTransientDbError(e);
+
+      if (!transient || attempt > retries) {
+        throw e;
+      }
+
+      const delay = Math.min(maxDelayMs, Math.round(baseDelayMs * Math.pow(2, attempt - 1)));
+      console.warn(`${label} failed (attempt ${attempt}/${retries}); retrying in ${delay}ms: ${e && e.message ? e.message : e}`);
+      await sleep(delay);
+    }
+  }
+}
+
 async function ensureDbSchema() {
   const schemaPath = path.join(__dirname, '..', 'db', 'schema.sql');
   console.log(`Ensuring DB schema from ${schemaPath}...`);
   const sql = fs.readFileSync(schemaPath, 'utf8');
-  await pool.query(sql);
+  await withDbRetry('AUTO_DB_INIT / schema apply', () => pool.query(sql));
   console.log('DB schema ensured.');
 }
 
@@ -254,12 +298,14 @@ async function ensureBootstrapAdmin() {
   console.log(`Bootstrapping admin user "${username}"...`);
 
   const hash = await bcrypt.hash(password, 12);
-  await pool.query(
-    `INSERT INTO admin (username, password)
-     VALUES ($1, $2)
-     ON CONFLICT (username)
-     DO UPDATE SET password = EXCLUDED.password`,
-    [username, hash]
+  await withDbRetry('Bootstrap admin', () =>
+    pool.query(
+      `INSERT INTO admin (username, password)
+       VALUES ($1, $2)
+       ON CONFLICT (username)
+       DO UPDATE SET password = EXCLUDED.password`,
+      [username, hash]
+    )
   );
 
   console.log(`Admin user "${username}" created/updated via BOOTSTRAP_ADMIN_*.`);
@@ -407,7 +453,9 @@ async function seedSyntheticIfEmpty() {
     return;
   }
 
-  const existing = await pool.query('SELECT COUNT(*)::int AS n FROM fish_prices');
+  const existing = await withDbRetry('Synthetic seed precheck', () =>
+    pool.query('SELECT COUNT(*)::int AS n FROM fish_prices')
+  );
   const n = Number(existing.rows?.[0]?.n || 0);
   if (n > 0) {
     console.log(`Synthetic seed skipped: fish_prices already has ${n} row(s).`);
@@ -429,7 +477,7 @@ async function seedSyntheticIfEmpty() {
   }
 
   console.log(`Seeding synthetic fish history from ${isoDate(start)} to ${isoDate(end)} every ${intervalDays} day(s)...`);
-  await pool.query('BEGIN');
+  await withDbRetry('Synthetic seed BEGIN', () => pool.query('BEGIN'));
   try {
     // Gas (optional).
     let gasUpserted = 0;
@@ -480,6 +528,19 @@ async function start() {
   console.log(`Startup mode: NODE_ENV=${process.env.NODE_ENV || '(unset)'} demoMode=${demoMode}`);
   console.log(`AUTO_DB_INIT=${process.env.AUTO_DB_INIT || '(unset)'} (enabled=${autoDbInit})`);
 
+  if (!demoMode) {
+    const s = safeDbTargetSummary();
+    if (s && s.configured) {
+      console.log(
+        `DB target: host=${s.host || '(unknown)'} port=${s.port || '(default)'} db=${s.database || '(unknown)'} ssl=${String(
+          s.ssl
+        )} sslmode=${s.sslmode || '(none)'} (env PGSSL/DATABASE_SSL=${s.sslEnv || '(unset)'})`
+      );
+    } else {
+      console.warn('DB target: DATABASE_URL is not set (non-demo mode). DB-backed endpoints will fail until configured.');
+    }
+  }
+
   if (autoDbInit && !demoMode) {
     // Helpful for platforms where a "shell" is unavailable on free tier
     // or when you can't connect externally to Postgres (port 5432 blocked).
@@ -487,6 +548,11 @@ async function start() {
       await ensureDbSchema();
     } catch (e) {
       console.error('AUTO_DB_INIT failed; continuing startup without schema:', e);
+      if (isTransientDbError(e)) {
+        console.error(
+          'Hint: this looks like a transient Postgres connectivity issue (cold start / restart). Verify DATABASE_URL points to a reachable DB and try redeploying.'
+        );
+      }
     }
   } else if (autoDbInit && demoMode) {
     console.warn('AUTO_DB_INIT is enabled but demoMode=true; skipping schema init.');
@@ -538,6 +604,10 @@ async function start() {
           predictionSchedule.markRun(new Date());
           console.log(`Predictions generated (${reason}):`, r);
         } catch (e) {
+          if (isTransientDbError(e)) {
+            console.warn(`Prediction job skipped (${reason}): DB connection issue: ${e && e.message ? e.message : e}`);
+            return;
+          }
           console.error('Prediction job failed:', e);
         }
       };
@@ -551,14 +621,20 @@ async function start() {
         }
 
         try {
-          const existing = await pool.query(
-            'SELECT 1 FROM predictions WHERE prediction_date >= CURRENT_DATE LIMIT 1'
+          const existing = await withDbRetry(
+            'Startup prediction existence check',
+            () => pool.query('SELECT 1 FROM predictions WHERE prediction_date >= CURRENT_DATE LIMIT 1'),
+            { retries: 2, baseDelayMs: 250, maxDelayMs: 1500 }
           );
           if (existing.rows && existing.rows.length) {
             console.log('Startup prediction run skipped: future predictions already exist.');
             return;
           }
         } catch (e) {
+          if (isTransientDbError(e)) {
+            console.warn('Startup prediction run skipped: DB is not reachable yet.');
+            return;
+          }
           // If the check fails (e.g., schema missing), fall back to attempting a run.
           console.warn('Startup prediction existence check failed; attempting run anyway.');
         }

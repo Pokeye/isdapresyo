@@ -81,6 +81,9 @@ Guide + templates:
 - Render will read `render.yaml` and create:
 	- a Postgres database
 	- a Node web service
+	- the `DATABASE_URL` env var wired to that database
+
+If you want to use an external Postgres provider (e.g., Supabase), override `DATABASE_URL` in the Render Dashboard.
 
 2) Initialize the database tables
 - After Render deploys, open the backend service **Shell** and run:

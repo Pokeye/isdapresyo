@@ -16,10 +16,12 @@ services:
       - key: NODE_ENV
         value: production
       - key: DATABASE_URL
-        # Set this in the Render Dashboard to the database's *External Database URL*.
-        # (We avoid fromDatabase.connectionString here because it uses the internal
-        # hostname, which can cause DNS resolution issues on some setups.)
-        sync: false
+        # Prefer wiring directly from the managed Render Postgres instance.
+        # If you must override (e.g., using Supabase), replace this with `sync: false`
+        # and set DATABASE_URL in the Render Dashboard.
+        fromDatabase:
+          name: isdapresyo-db
+          property: connectionString
       - key: JWT_SECRET
         generateValue: true
       # If hosting frontend separately (Netlify/Vercel), keep this false.

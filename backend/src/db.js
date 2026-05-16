@@ -39,6 +39,47 @@ function shouldUseSsl(connectionString) {
   return false;
 }
 
+function safeDbTargetSummary(connectionString) {
+  if (!connectionString) {
+    return {
+      configured: false,
+      nodeEnv: process.env.NODE_ENV || null,
+      sslEnv: process.env.PGSSL ?? process.env.DATABASE_SSL ?? null,
+    };
+  }
+
+  try {
+    const u = new URL(connectionString);
+    const host = u.hostname || null;
+    const port = u.port ? Number(u.port) : null;
+    const database = (u.pathname || '').replace(/^\//, '') || null;
+    const sslmode = u.searchParams.get('sslmode') || null;
+    const ssl = shouldUseSsl(connectionString);
+
+    return {
+      configured: true,
+      host,
+      port,
+      database,
+      sslmode,
+      ssl,
+      nodeEnv: process.env.NODE_ENV || null,
+      sslEnv: process.env.PGSSL ?? process.env.DATABASE_SSL ?? null,
+    };
+  } catch {
+    return {
+      configured: true,
+      host: null,
+      port: null,
+      database: null,
+      sslmode: null,
+      ssl: shouldUseSsl(connectionString),
+      nodeEnv: process.env.NODE_ENV || null,
+      sslEnv: process.env.PGSSL ?? process.env.DATABASE_SSL ?? null,
+    };
+  }
+}
+
 function ensurePool() {
   if (poolInstance) return poolInstance;
 
@@ -49,11 +90,30 @@ function ensurePool() {
     throw new Error('DATABASE_URL is required');
   }
 
+  const maxRaw = Number(process.env.PGPOOL_MAX || process.env.DB_POOL_MAX || 5);
+  const max = Number.isFinite(maxRaw) && maxRaw > 0 ? Math.floor(maxRaw) : 5;
+
+  const connectionTimeoutMillisRaw = Number(process.env.PGCONNECT_TIMEOUT_MS || 5000);
+  const connectionTimeoutMillis =
+    Number.isFinite(connectionTimeoutMillisRaw) && connectionTimeoutMillisRaw >= 0
+      ? Math.floor(connectionTimeoutMillisRaw)
+      : 5000;
+
+  const idleTimeoutMillisRaw = Number(process.env.PGIDLE_TIMEOUT_MS || 30000);
+  const idleTimeoutMillis =
+    Number.isFinite(idleTimeoutMillisRaw) && idleTimeoutMillisRaw >= 0
+      ? Math.floor(idleTimeoutMillisRaw)
+      : 30000;
+
   poolInstance = new Pool({
     connectionString,
     // Managed Postgres providers (Supabase/Render/etc.) often require SSL.
     // Use PGSSL=true (or DATABASE_SSL=true) to force SSL in development.
     ssl: shouldUseSsl(connectionString) ? { rejectUnauthorized: false } : false,
+    max,
+    connectionTimeoutMillis,
+    idleTimeoutMillis,
+    keepAlive: true,
   });
 
   return poolInstance;
@@ -66,3 +126,5 @@ const pool = {
 };
 
 module.exports = { pool };
+
+module.exports.safeDbTargetSummary = () => safeDbTargetSummary(process.env.DATABASE_URL);
